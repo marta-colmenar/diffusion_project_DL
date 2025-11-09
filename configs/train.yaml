@@ -1,6 +1,6 @@
 learning_rate: 0.0002
 batch_size: 128
-num_epochs: 500
+num_epochs: 200
 sigma_min: 0.01
 sigma_max: 1.0
 dataset_name: 'FashionMNIST'
@@ -11,3 +11,4 @@ checkpoint_dir: 'checkpoints'
 log_interval: 10
 save_model: true
 evaluation_metric: 'FID'
+fid_eval_freq: 1

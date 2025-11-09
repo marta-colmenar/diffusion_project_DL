@@ -37,44 +37,55 @@ class NoiseEmbedding(nn.Module):
         return torch.cat([f.cos(), f.sin()], dim=-1)
 
 class CondBatchNorm2d(nn.Module):
-    """BatchNorm with affine parameters predicted from a condition vector."""
     def __init__(self, num_features: int, cond_channels: int, eps=1e-5, momentum=0.1):
         super().__init__()
-        # base BN with affine=False (we will apply affine from condition)
+        # Base BatchNorm without affine params (we’ll supply those from cond)
         self.bn = nn.BatchNorm2d(num_features, eps=eps, momentum=momentum, affine=False)
-        # map condition embedding to gamma and beta
+        
+        # Linear layer maps cond → [gamma, beta]
         self.modulation = nn.Linear(cond_channels, 2 * num_features)
-        # initialize modulators to do near-identity (gamma ~1, beta ~0)
+        
+        # Initialize modulation so that initially gamma ≈ 1, beta ≈ 0
         nn.init.zeros_(self.modulation.weight)
         nn.init.zeros_(self.modulation.bias)
 
     def forward(self, x: torch.Tensor, cond: torch.Tensor) -> torch.Tensor:
-        # x: (B, C, H, W), cond: (B, cond_channels)
+        # x: (B, C, H, W)
+        # cond: (B, cond_channels)
         out = self.bn(x)
-        params = self.modulation(cond)  # (B, 2*C)
-        B = x.size(0)
-        C = out.size(1)
+        params = self.modulation(cond)  # (B, 2 * C)
+        B, C = x.shape[0], x.shape[1]
         gamma, beta = params[:, :C], params[:, C:]
         gamma = gamma.view(B, C, 1, 1)
         beta = beta.view(B, C, 1, 1)
         return gamma * out + beta
 
 
+
 class ResidualBlock(nn.Module):
     def __init__(self, nb_channels: int, cond_channels: int) -> None:
         super().__init__()
         self.norm1 = nn.BatchNorm2d(nb_channels) # --> original code
-        # self.norm1 = CondBatchNorm2d(nb_channels, cond_channels)
         self.conv1 = nn.Conv2d(nb_channels, nb_channels, kernel_size=3, stride=1, padding=1)
         self.norm2 = nn.BatchNorm2d(nb_channels) # --> original code
-        # self.norm2 = CondBatchNorm2d(nb_channels, cond_channels)
         self.conv2 = nn.Conv2d(nb_channels, nb_channels, kernel_size=3, stride=1, padding=1)
-
-        nn.init.zeros_(self.conv2.weight)
-        if self.conv2.bias is not None:
-            nn.init.zeros_(self.conv2.bias)
     
     def forward(self, x: torch.Tensor, cond: torch.Tensor) -> torch.Tensor:
         y = self.conv1(F.relu(self.norm1(x)))
         y = self.conv2(F.relu(self.norm2(y)))
         return x + y
+    
+
+# class ResidualBlock(nn.Module):
+#     def __init__(self, nb_channels: int, cond_channels: int):
+#         super().__init__()
+#         self.norm1 = CondBatchNorm2d(nb_channels, cond_channels)
+#         self.conv1 = nn.Conv2d(nb_channels, nb_channels, kernel_size=3, stride=1, padding=1)
+#         self.norm2 = CondBatchNorm2d(nb_channels, cond_channels)
+#         self.conv2 = nn.Conv2d(nb_channels, nb_channels, kernel_size=3, stride=1, padding=1)
+
+#     def forward(self, x: torch.Tensor, cond: torch.Tensor) -> torch.Tensor:
+#         h = self.conv1(F.silu(self.norm1(x, cond)))
+#         h = self.conv2(F.silu(self.norm2(h, cond)))
+#         return x + h
+
