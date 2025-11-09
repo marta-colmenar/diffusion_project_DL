@@ -1,4 +1,4 @@
-# Miniproject 1 — Image generation with a diffusion model
+# Project — Image generation with a diffusion model
 
 Project to implement a noise-conditioned diffusion denoiser (Karras et al. style).  
 Provides training, sampling (Euler sampler), simple model scaffold and utilities for FashionMNIST / CelebA.
