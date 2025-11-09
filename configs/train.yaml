@@ -11,4 +11,4 @@ checkpoint_dir: 'checkpoints'
 log_interval: 10
 save_model: true
 evaluation_metric: 'FID'
-fid_eval_freq: 1
+fid_eval_freq: 10
