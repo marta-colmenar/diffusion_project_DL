@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+env/
+venv/
+*.egg-info/
+
+# Data, checkpoints, outputs
+/data/
+/data/*
+/checkpoints/
+/samples/
+/*.sqlite
+*.db
+
+# macOS
+.DS_Store
+
+# Jupyter
+.ipynb_checkpoints/
+
+# git LFS metadata (if used)
+.gitattributes

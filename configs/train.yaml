@@ -1,0 +1,13 @@
+learning_rate: 0.0002
+batch_size: 128
+num_epochs: 500
+sigma_min: 0.01
+sigma_max: 1.0
+dataset_name: 'FashionMNIST'
+data_root: 'data'      # matches train.py usage (was root_dir)
+num_workers: 4
+pin_memory: true
+checkpoint_dir: 'checkpoints'
+log_interval: 10
+save_model: true
+evaluation_metric: 'FID'
