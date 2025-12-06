@@ -5,12 +5,13 @@ import yaml
 from pathlib import Path
 
 import torch
-import torch.nn as nn
+import shutil
 import torch.optim as optim
 import subprocess
 from torchvision.utils import save_image
 import torch.nn.functional as F
 from typing import Union
+from datetime import datetime
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
@@ -19,7 +20,6 @@ if str(PROJECT_ROOT) not in sys.path:
 from src.data import load_dataset_and_make_dataloaders
 from src.model import Model
 from src.sigma import sample_sigma, build_sigma_schedule
-from src.losses import mse_loss
 
 # TODO: add pre-commit hooks to check formatting, linting, type hints, etc.
 # TODO: enable wandb?
@@ -60,7 +60,7 @@ def _get_valid_loader(dl):
     return dl
 
 # helper to export real images for FID
-def export_real_images(valid_loader, outdir: str, n: int = 500):
+def export_real_images(valid_loader, outdir: Union[Path, str], n: int = 500):
     outdir = Path(outdir)
     outdir.mkdir(parents=True, exist_ok=True)
     saved = 0
@@ -108,6 +108,17 @@ def train_model(config_path: str = "configs/train.yaml"):
     with open(config_path, "r") as f:
         cfg = yaml.safe_load(f)
 
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    run_name = timestamp + "_" + cfg.get("run_name", "default_run")
+    run_dir = Path("runs") / run_name
+    checkpoint_dir = run_dir / "checkpoints"
+    Path(checkpoint_dir).mkdir(parents=True, exist_ok=True)
+
+    shutil.copy2(Path(config_path), run_dir / "config.yaml")
+
+    fid_freq = cfg.get("fid_eval_freq", 1)
+    checkpoint_freq = cfg.get("checkpoint_freq", 10)
+
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     dataloaders, info = load_dataset_and_make_dataloaders(
@@ -122,6 +133,9 @@ def train_model(config_path: str = "configs/train.yaml"):
     valid_loader = _get_valid_loader(dataloaders)
     sigma_data = float(info.sigma_data)
 
+    sigma_min = cfg.get("sigma_min", 0.001)
+    sigma_max = cfg.get("sigma_max", 20.0)
+
     model = Model(
         image_channels=getattr(info, "image_channels", 1),
         nb_channels=cfg.get("nb_channels", 64),
@@ -132,8 +146,6 @@ def train_model(config_path: str = "configs/train.yaml"):
 
     optimizer = optim.Adam(model.parameters(), lr=cfg.get("learning_rate", 1e-3))
     num_epochs = cfg.get("num_epochs", 1)
-    checkpoint_dir = cfg.get("checkpoint_dir", "checkpoints")
-    Path(checkpoint_dir).mkdir(parents=True, exist_ok=True)
 
     model.train()
     for epoch in range(num_epochs):
@@ -173,17 +185,17 @@ def train_model(config_path: str = "configs/train.yaml"):
         print(f"Epoch {epoch+1} avg loss: {avg_epoch_loss:.4f}")
 
         # save checkpoint
-        ckpt_path = os.path.join(checkpoint_dir, f"model_epoch_{epoch+1}.pth")
-        torch.save({"epoch": epoch + 1, "model_state": model.state_dict(), "optimizer_state": optimizer.state_dict()}, ckpt_path)
-        print(f"Saved checkpoint: {ckpt_path}")
+        if (epoch + 1) % checkpoint_freq == 0:
+            ckpt_path = os.path.join(checkpoint_dir, f"model_epoch_{epoch+1}.pth")
+            torch.save({"epoch": epoch + 1, "model_state": model.state_dict(), "optimizer_state": optimizer.state_dict()}, ckpt_path)
+            print(f"Saved checkpoint: {ckpt_path}")
 
         # Optional FID evaluation (after checkpoint saved)
         if cfg.get("evaluation_metric", "") == "FID":
-            fid_freq = cfg.get("fid_eval_freq", 1)
             if (epoch + 1) % fid_freq == 0:
                 model.eval()
                 real_dir = cfg.get("fid_real_dir", "data/fid_real")
-                fake_dir = os.path.join(checkpoint_dir, "fid_samples", f"epoch_{epoch+1}")
+                fake_dir = os.path.join(run_dir, "fid_samples", f"epoch_{epoch+1}")
                 Path(fake_dir).mkdir(parents=True, exist_ok=True)
 
                 # export real images if missing
