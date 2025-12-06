@@ -202,8 +202,9 @@ def train_model(config_path: str = "configs/train.yaml"):
                 # call pytorch-fid CLI
                 try:
                     subprocess.check_call([
-                        "pytorch-fid", str(real_dir), str(fake_dir),
-                        "--device", "cuda" if torch.cuda.is_available() else "cpu"
+                        "pytorch-fid",
+                        "--device", "cuda" if torch.cuda.is_available() else "cpu", 
+                        str(real_dir), str(fake_dir),
                     ])
                 except FileNotFoundError:
                     print("pytorch-fid not installed; install with `pip install pytorch-fid` to compute FID")
