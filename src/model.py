@@ -18,6 +18,8 @@ class Model(nn.Module):
         self._initialize_blocks(nb_channels, cond_channels, num_blocks, conditioned)
         self.conv_out = nn.Conv2d(nb_channels, image_channels, kernel_size=3, padding=1)
 
+        nn.init.zeros_(self.conv_out.weight)
+
     def _initialize_blocks(self, nb_channels, cond_channels, num_blocks, conditioned=True):
         if conditioned:
             self.blocks = nn.ModuleList([CondResidualBlock(nb_channels, cond_channels) for _ in range(num_blocks)])
@@ -71,6 +73,7 @@ class CondBatchNorm2d(nn.Module):
         # Initialize modulation so that initially gamma ≈ 1, beta ≈ 0
         nn.init.zeros_(self.modulation.weight)
         nn.init.zeros_(self.modulation.bias)
+        nn.init.constant_(self.modulation.bias[:num_features], 1.) 
 
     def forward(self, x: torch.Tensor, cond: torch.Tensor) -> torch.Tensor:
         # x: (B, C, H, W)
@@ -90,6 +93,8 @@ class CondResidualBlock(nn.Module):
         self.conv1 = nn.Conv2d(nb_channels, nb_channels, kernel_size=3, stride=1, padding=1)
         self.norm2 = CondBatchNorm2d(nb_channels, cond_channels)
         self.conv2 = nn.Conv2d(nb_channels, nb_channels, kernel_size=3, stride=1, padding=1)
+
+        nn.init.zeros_(self.conv2.weight)
 
     def forward(self, x: torch.Tensor, cond: torch.Tensor) -> torch.Tensor:
         h = self.conv1(F.silu(self.norm1(x, cond)))
