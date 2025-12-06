@@ -1,10 +1,16 @@
 #!/bin/bash
 
-# Activate the virtual environment if needed
-# source venv/bin/activate
+#SBATCH --job-name="diffusion_model"
+#SBATCH --time=02:00:00
+#SBATCH --ntasks=1
+#SBATCH --account=invest
+#SBATCH --partition=gpu-invest
+#SBATCH --qos=job_gpu_sznitman
+#SBATCH --gres=gpu:rtx3090:1
+#SBATCH --output=logs/train_%j.out
+#SBATCH --cpus-per-task=4
+#SBATCH --mem-per-cpu=8G
 
-# Set the Python path to the src directory
+source venv/bin/activate
 export PYTHONPATH=$(pwd)/src
-
-# Run the training script
 python src/train.py --config configs/train.yaml
