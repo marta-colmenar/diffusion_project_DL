@@ -49,6 +49,7 @@ def build_model_for_sampling(info, device, cfg_path="configs/train.yaml"):
     return m
 
 
+# FIXME: there are two versions of c_funcs in train.py and sample.py, unify them
 def c_funcs(sigma: torch.Tensor, sigma_data: float):
     # sigma: (B,) or scalar tensor -> return tensors shaped (B,)
     denom = torch.sqrt(sigma_data ** 2 + sigma ** 2)
@@ -152,6 +153,7 @@ def main():
     imgs = samples.clamp(-1, 1).add(1).div(2)
     grid = make_grid(imgs, nrow=min(8, args.n))
     out_path = os.path.join(args.outdir, "samples_grid.png")
+    # TODO: make_grid is called inside save_image, just pass nrow to it.
     save_image(grid, out_path)
     print("Saved samples to", out_path)
 

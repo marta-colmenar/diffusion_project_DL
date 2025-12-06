@@ -1,5 +1,5 @@
 import os
-import math
+# import math
 import sys
 import yaml
 from pathlib import Path
@@ -9,6 +9,8 @@ import torch.nn as nn
 import torch.optim as optim
 import subprocess
 from torchvision.utils import save_image
+import torch.nn.functional as F
+from typing import Union
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
@@ -19,6 +21,8 @@ from src.model import Model
 from src.sigma import sample_sigma, build_sigma_schedule
 from src.losses import mse_loss
 
+# TODO: add pre-commit hooks to check formatting, linting, type hints, etc.
+# TODO: enable wandb?
 
 def c_funcs(sigma: torch.Tensor, sigma_data: float):
     # sigma: (B,)
@@ -26,6 +30,7 @@ def c_funcs(sigma: torch.Tensor, sigma_data: float):
     denom = torch.sqrt(sd ** 2 + sigma ** 2)
     c_in = 1.0 / denom
     c_out = sigma * sd / denom
+    # TODO: it could be written more efficiently without recomputing denom
     c_skip = (sd ** 2) / (sd ** 2 + sigma ** 2)
     c_noise = torch.log(sigma) / 4.0
     return c_in, c_out, c_skip, c_noise
@@ -64,6 +69,7 @@ def export_real_images(valid_loader, outdir: str, n: int = 500):
             x = batch[0]
         else:
             x = batch
+        # TODO: image processing can be unified later, it's repeated
         imgs = x.clamp(-1, 1).add(1).div(2)  # to [0,1]
         for i in range(imgs.size(0)):
             if saved >= n:
@@ -73,6 +79,9 @@ def export_real_images(valid_loader, outdir: str, n: int = 500):
     return saved
 
 # simple Euler sampler used for FID generation inside training
+# FIXME: this function is duplicated in src/sampling.py; refactor later
+# FIXME: also use c_funcs from src/sampling.py
+# TODO: handle eval and train switching outside? use model.training?
 def euler_sample_batch(model, sigmas, n, channels, H, sigma_data, device):
     model.eval()
     with torch.no_grad():
@@ -95,6 +104,7 @@ def euler_sample_batch(model, sigmas, n, channels, H, sigma_data, device):
     return x
 
 def train_model(config_path: str = "configs/train.yaml"):
+    # TODO: make config yaml dataclass and validate fields. Only bonus.
     with open(config_path, "r") as f:
         cfg = yaml.safe_load(f)
 
@@ -137,7 +147,8 @@ def train_model(config_path: str = "configs/train.yaml"):
 
             b = y.size(0)
             # sample per-sample sigma
-            sigma = sample_sigma(b).to(device)  # (B,)
+            # TODO: does it make sense that sigma_min and sigma_max are same as sampling?
+            sigma = sample_sigma(b, sigma_min=sigma_min, sigma_max=sigma_max).to(device)  # (B,)
             x = add_noise(y, sigma)
 
             c_in, c_out, c_skip, c_noise = c_funcs(sigma, sigma_data)
@@ -177,6 +188,7 @@ def train_model(config_path: str = "configs/train.yaml"):
 
                 # export real images if missing
                 fid_num = cfg.get("fid_num_samples", 500)
+                # FIXME: the loop won't enter if fid_num_samples changed after first run
                 if not Path(real_dir).exists() or not any(Path(real_dir).iterdir()):
                     print("Exporting real images for FID into", real_dir)
                     saved = export_real_images(valid_loader, real_dir, n=fid_num)
@@ -186,7 +198,8 @@ def train_model(config_path: str = "configs/train.yaml"):
                 batch_sz = cfg.get("fid_batch_size", 64)
                 steps = cfg.get("fid_steps", 50)
                 rho = cfg.get("fid_rho", 7.0)
-                sigmas = build_sigma_schedule(steps, rho=rho).to(device)
+                # TODO: we are not using sigma_min and sigma_max from training config here
+                sigmas = build_sigma_schedule(steps, rho, sigma_min, sigma_max).to(device)
 
                 produced = 0
                 while produced < fid_num:
