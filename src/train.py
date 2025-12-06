@@ -7,7 +7,6 @@ from pathlib import Path
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from tqdm import tqdm
 import subprocess
 from torchvision.utils import save_image
 
@@ -128,9 +127,9 @@ def train_model(config_path: str = "configs/train.yaml"):
 
     model.train()
     for epoch in range(num_epochs):
-        pbar = tqdm(train_loader, desc=f"epoch {epoch+1}/{num_epochs}")
+        # pbar = tqdm(train_loader, desc=f"epoch {epoch+1}/{num_epochs}")
         epoch_loss = 0.0
-        for batch in pbar:
+        for batch in train_loader:
             if isinstance(batch, (list, tuple)):
                 y = batch[0].to(device)
             else:
@@ -157,7 +156,7 @@ def train_model(config_path: str = "configs/train.yaml"):
 
             step_loss = loss.item()
             epoch_loss += step_loss
-            pbar.set_postfix({"loss": f"{step_loss:.4f}"})
+            # pbar.set_postfix({"loss": f"{step_loss:.4f}"})
 
         avg_epoch_loss = epoch_loss / len(train_loader)
         print(f"Epoch {epoch+1} avg loss: {avg_epoch_loss:.4f}")
