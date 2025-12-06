@@ -8,9 +8,10 @@ venv/
 *.egg-info/
 
 # Data, checkpoints, outputs
+/logs/
 /data/
 /data/*
-/checkpoints/
+/runs/
 /samples/
 /*.sqlite
 *.db
