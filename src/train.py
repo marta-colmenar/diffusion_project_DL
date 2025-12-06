@@ -118,6 +118,7 @@ def train_model(config_path: str = "configs/train.yaml"):
         nb_channels=cfg.get("nb_channels", 64),
         num_blocks=cfg.get("num_blocks", 4),
         cond_channels=cfg.get("cond_channels", 64),
+        conditioned=cfg.get("conditioned", True),
     ).to(device)
 
     optimizer = optim.Adam(model.parameters(), lr=cfg.get("learning_rate", 1e-3))

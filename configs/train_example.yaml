@@ -1,4 +1,5 @@
 learning_rate: 0.0002
+conditioned: true
 batch_size: 128
 num_epochs: 200
 sigma_min: 0.01

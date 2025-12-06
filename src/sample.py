@@ -34,12 +34,14 @@ def build_model_for_sampling(info, device, cfg_path="configs/train.yaml"):
     num_blocks = cfg.get("num_blocks", 4)
     cond_channels = cfg.get("cond_channels", 64)
     image_channels = getattr(info, "image_channels", 1)
+    conditioned=cfg.get("conditioned", True)
 
     m = Model(
         image_channels=image_channels,
         nb_channels=nb_channels,
         num_blocks=num_blocks,
         cond_channels=cond_channels,
+        conditioned=conditioned,
     )
 
     m.to(device)
