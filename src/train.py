@@ -42,16 +42,16 @@ def _get_train_loader(dl):
     # support both dict and simple namespace with .train
     if isinstance(dl, dict) and 'train' in dl:
         return dl['train']
-    if hasattr(dl, 'train'):
-        return dl.train
+    if (train := getattr(dl, 'train', None)) is not None:
+        return train
     return dl  # assume it's already an iterable
 
 
 def _get_valid_loader(dl):
     if isinstance(dl, dict) and 'valid' in dl:
         return dl['valid']
-    if hasattr(dl, 'valid'):
-        return dl.valid
+    if (valid := getattr(dl, 'valid', None)) is not None:
+        return valid
     # if only one loader provided, return it (best-effort)
     return dl
 
