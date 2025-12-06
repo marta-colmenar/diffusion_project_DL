@@ -150,7 +150,7 @@ def train_model(config_path: str = "configs/train.yaml"):
             # target = (y - c_skip * x) / c_out
             target = (y - c_skip.view(-1, 1, 1, 1) * x) / c_out.view(-1, 1, 1, 1)
 
-            loss = mse_loss(pred, target)
+            loss = F.mse_loss(pred, target)
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
