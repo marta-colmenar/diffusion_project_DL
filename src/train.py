@@ -1,5 +1,4 @@
 import os
-# import math
 import sys
 import yaml
 from pathlib import Path
@@ -12,8 +11,16 @@ from torchvision.utils import save_image
 import torch.nn.functional as F
 from typing import Union
 from datetime import datetime
+import logging
 from src.common import euler_sample, c_funcs
 
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+ch = logging.StreamHandler()
+ch.setLevel(logging.INFO)
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+ch.setFormatter(formatter)
+logger.addHandler(ch)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
@@ -147,13 +154,13 @@ def train_model(config_path: str = "configs/train.yaml"):
             # pbar.set_postfix({"loss": f"{step_loss:.4f}"})
 
         avg_epoch_loss = epoch_loss / len(train_loader)
-        print(f"Epoch {epoch+1} avg loss: {avg_epoch_loss:.4f}")
+        logger.info(f"Epoch {epoch+1} avg loss: {avg_epoch_loss:.4f}")
 
         # save checkpoint
         if (epoch + 1) % checkpoint_freq == 0:
             ckpt_path = os.path.join(checkpoint_dir, f"model_epoch_{epoch+1}.pth")
             torch.save({"epoch": epoch + 1, "model_state": model.state_dict(), "optimizer_state": optimizer.state_dict()}, ckpt_path)
-            print(f"Saved checkpoint: {ckpt_path}")
+            logger.info(f"Saved checkpoint: {ckpt_path}")
 
         # Optional FID evaluation (after checkpoint saved)
         if cfg.get("evaluation_metric", "") == "FID":
@@ -167,9 +174,9 @@ def train_model(config_path: str = "configs/train.yaml"):
                 fid_num = cfg.get("fid_num_samples", 500)
                 # FIXME: the loop won't enter if fid_num_samples changed after first run
                 if not Path(real_dir).exists() or not any(Path(real_dir).iterdir()):
-                    print("Exporting real images for FID into", real_dir)
+                    logger.info("Exporting real images for FID into", real_dir)
                     saved = export_real_images(valid_loader, real_dir, n=fid_num)
-                    print(f"Exported {saved} real images for FID")
+                    logger.info(f"Exported {saved} real images for FID")
 
                 # generate fake images and save
                 batch_sz = cfg.get("fid_batch_size", 64)
@@ -187,7 +194,7 @@ def train_model(config_path: str = "configs/train.yaml"):
                         save_image(imgs[i], Path(fake_dir) / f"sample_{produced:05d}.png")
                         produced += 1
 
-                print(f"Saved {produced} generated images to {fake_dir}")
+                logger.info(f"Saved {produced} generated images to {fake_dir}")
 
                 # call pytorch-fid CLI
                 try:
@@ -197,9 +204,9 @@ def train_model(config_path: str = "configs/train.yaml"):
                         str(real_dir), str(fake_dir),
                     ])
                 except FileNotFoundError:
-                    print("pytorch-fid not installed; install with `pip install pytorch-fid` to compute FID")
+                    logger.error("pytorch-fid not installed; install with `pip install pytorch-fid` to compute FID")
                 except subprocess.CalledProcessError as e:
-                    print("pytorch-fid returned non-zero exit code:", e.returncode)
+                    logger.error("pytorch-fid returned non-zero exit code:", e.returncode)
                 model.train()
 
     return model
