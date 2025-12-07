@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
+from typing import Optional
 
 class Model(nn.Module):
     def __init__(
@@ -11,23 +11,38 @@ class Model(nn.Module):
         num_blocks: int,
         cond_channels: int,
         conditioned: bool = True,
+        num_classes: int = 0
     ) -> None:
         super().__init__()
+        self.conditioned = conditioned
+        self.num_classes = num_classes
         self.noise_emb = NoiseEmbedding(cond_channels)
+        
+        # Add class embedding if conditioning is used
+        if self.conditioned and self.num_classes > 0:
+            self.class_emb = ClassEmbedding(num_classes, cond_channels)
+        else:
+            self.class_emb = None
+
         self.conv_in = nn.Conv2d(image_channels, nb_channels, kernel_size=3, padding=1)
         self._initialize_blocks(nb_channels, cond_channels, num_blocks, conditioned)
         self.conv_out = nn.Conv2d(nb_channels, image_channels, kernel_size=3, padding=1)
-
-        nn.init.zeros_(self.conv_out.weight)
 
     def _initialize_blocks(self, nb_channels, cond_channels, num_blocks, conditioned=True):
         if conditioned:
             self.blocks = nn.ModuleList([CondResidualBlock(nb_channels, cond_channels) for _ in range(num_blocks)])
         else:
             self.blocks = nn.ModuleList([ResidualBlock(nb_channels) for _ in range(num_blocks)])
+            
+    def forward(self, noisy_input: torch.Tensor, c_noise: torch.Tensor, labels: Optional[torch.Tensor] = None) -> torch.Tensor:
 
-    def forward(self, noisy_input: torch.Tensor, c_noise: torch.Tensor) -> torch.Tensor:
-        cond = self.noise_emb(c_noise) # TODO: not used yet
+        cond = self.noise_emb(c_noise) 
+        
+        # FIXME: what happens if labels is None but class_emb is not None?
+        if self.class_emb is not None and labels is not None:
+            class_cond = self.class_emb(labels)
+            cond += class_cond # (B, cond_channels), so that cond_channels does not change
+        
         x = self.conv_in(noisy_input)
         for block in self.blocks:
             if isinstance(block, CondResidualBlock):
@@ -100,4 +115,14 @@ class CondResidualBlock(nn.Module):
         h = self.conv1(F.silu(self.norm1(x, cond)))
         h = self.conv2(F.silu(self.norm2(h, cond)))
         return x + h
+
+class ClassEmbedding(nn.Module):
+    def __init__(self, num_classes: int, cond_channels: int) -> None:
+        super().__init__()
+        self.embedding = nn.Embedding(num_classes, cond_channels)
+    
+    def forward(self, input: torch.Tensor) -> torch.Tensor:
+        # Input is expected to be a tensor of integer labels (B,)
+        assert input.ndim == 1
+        return self.embedding(input)
 

@@ -126,8 +126,10 @@ def train_model(config_path: str = "configs/train.yaml"):
         for batch in train_loader:
             if isinstance(batch, (list, tuple)):
                 y = batch[0].to(device)
+                labels = batch[1].to(device)
             else:
                 y = batch.to(device)
+                labels = None
 
             b = y.size(0)
             # sample per-sample sigma
@@ -139,7 +141,7 @@ def train_model(config_path: str = "configs/train.yaml"):
             cin_x = c_in.view(-1, 1, 1, 1) * x
 
             # forward: model(cin * x, c_noise)
-            pred = model(cin_x, c_noise.to(device))
+            pred = model(cin_x, c_noise.to(device), labels=labels)
 
             # target = (y - c_skip * x) / c_out
             target = (y - c_skip.view(-1, 1, 1, 1) * x) / c_out.view(-1, 1, 1, 1)
