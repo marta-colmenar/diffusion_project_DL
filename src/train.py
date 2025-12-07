@@ -188,7 +188,9 @@ def train_model(config_path: str = "configs/train.yaml"):
                 # FIXME: the loop won't enter if fid_num_samples changed after first run
                 if not Path(real_dir).exists() or not any(Path(real_dir).iterdir()):
                     logger.info("Exporting real images for FID into", real_dir)
-                    saved = export_real_images(valid_loader, real_dir, n=fid_num)
+                    saved = export_real_images(
+                        valid_loader, real_dir, n=cfg.training.fid_num_samples
+                    )
                     logger.info(f"Exported {saved} real images for FID")
 
                 # generate fake images and save
