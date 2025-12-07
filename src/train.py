@@ -14,6 +14,7 @@ import yaml
 from torchvision.utils import save_image
 
 from src.common import c_funcs, euler_sample
+from src.config import Config
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -80,48 +81,44 @@ def export_real_images(valid_loader, outdir: Union[Path, str], n: int = 500):
 
 
 def train_model(config_path: str = "configs/train.yaml"):
-    # TODO: make config yaml dataclass and validate fields. Only bonus.
-    with open(config_path, "r") as f:
-        cfg = yaml.safe_load(f)
+
+    cfg = Config.load_from_yaml(Path(config_path))
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    run_name = timestamp + "_" + cfg.get("run_name", "default_run")
+    run_name = timestamp + "_" + cfg.training.run_name
     run_dir = Path("runs") / run_name
     checkpoint_dir = run_dir / "checkpoints"
     Path(checkpoint_dir).mkdir(parents=True, exist_ok=True)
 
     shutil.copy2(Path(config_path), run_dir / "config.yaml")
 
-    fid_freq = cfg.get("fid_eval_freq", 1)
-    checkpoint_freq = cfg.get("checkpoint_freq", 10)
+    fid_freq = cfg.training.fid_eval_freq
+    checkpoint_freq = cfg.training.checkpoint_freq
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     dataloaders, info = load_dataset_and_make_dataloaders(
-        dataset_name=cfg.get("dataset_name", "FashionMNIST"),
-        root_dir=cfg.get("data_root", "data"),
-        batch_size=cfg.get("batch_size", 32),
-        num_workers=cfg.get("num_workers", 0),
-        pin_memory=cfg.get("pin_memory", False),
+        dataset_name=cfg.data.dataset_name,
+        root_dir=str(cfg.data.data_root),
+        batch_size=cfg.data.batch_size,
+        num_workers=cfg.data.num_workers,
+        pin_memory=cfg.data.pin_memory,
     )
 
     train_loader = _get_train_loader(dataloaders)
     valid_loader = _get_valid_loader(dataloaders)
     sigma_data = float(info.sigma_data)
 
-    sigma_min = cfg.get("sigma_min", 0.001)
-    sigma_max = cfg.get("sigma_max", 20.0)
-
     model = Model(
         image_channels=getattr(info, "image_channels", 1),
-        nb_channels=cfg.get("nb_channels", 64),
-        num_blocks=cfg.get("num_blocks", 4),
-        cond_channels=cfg.get("cond_channels", 64),
-        conditioned=cfg.get("conditioned", True),
+        nb_channels=cfg.model.nb_channels,
+        num_blocks=cfg.model.num_blocks,
+        cond_channels=cfg.model.cond_channels,
+        conditioned=cfg.model.conditioned,
     ).to(device)
 
-    optimizer = optim.Adam(model.parameters(), lr=cfg.get("learning_rate", 1e-3))
-    num_epochs = cfg.get("num_epochs", 1)
+    optimizer = optim.Adam(model.parameters(), lr=cfg.training.learning_rate)
+    num_epochs = cfg.training.num_epochs
 
     model.train()
     for epoch in range(num_epochs):
@@ -138,7 +135,9 @@ def train_model(config_path: str = "configs/train.yaml"):
             b = y.size(0)
             # sample per-sample sigma
             # TODO: does it make sense that sigma_min and sigma_max are same as sampling?
-            sigma = sample_sigma(b, sigma_min=sigma_min, sigma_max=sigma_max).to(
+            sigma = sample_sigma(
+                b, sigma_min=cfg.diffusion.sigma_min, sigma_max=cfg.diffusion.sigma_max
+            ).to(
                 device
             )  # (B,)
             x = add_noise(y, sigma)
@@ -178,15 +177,14 @@ def train_model(config_path: str = "configs/train.yaml"):
             logger.info(f"Saved checkpoint: {ckpt_path}")
 
         # Optional FID evaluation (after checkpoint saved)
-        if cfg.get("evaluation_metric", "") == "FID":
+        if cfg.training.evaluation_metric == "FID":
             if (epoch + 1) % fid_freq == 0:
                 model.eval()
-                real_dir = cfg.get("fid_real_dir", "data/fid_real")
+                real_dir = cfg.data.data_root / (cfg.data.dataset_name + "_fid_real")
                 fake_dir = os.path.join(run_dir, "fid_samples", f"epoch_{epoch+1}")
                 Path(fake_dir).mkdir(parents=True, exist_ok=True)
 
                 # export real images if missing
-                fid_num = cfg.get("fid_num_samples", 500)
                 # FIXME: the loop won't enter if fid_num_samples changed after first run
                 if not Path(real_dir).exists() or not any(Path(real_dir).iterdir()):
                     logger.info("Exporting real images for FID into", real_dir)
@@ -194,17 +192,16 @@ def train_model(config_path: str = "configs/train.yaml"):
                     logger.info(f"Exported {saved} real images for FID")
 
                 # generate fake images and save
-                batch_sz = cfg.get("fid_batch_size", 64)
-                steps = cfg.get("fid_steps", 50)
-                rho = cfg.get("fid_rho", 7.0)
-                # TODO: we are not using sigma_min and sigma_max from training config here
-                sigmas = build_sigma_schedule(steps, rho, sigma_min, sigma_max).to(
-                    device
-                )
+                batch_sz = cfg.data.batch_size
+                steps = cfg.training.fid_steps
+                rho = 7.0  # common choice from Karras et al.
+                sigmas = build_sigma_schedule(
+                    steps, rho, cfg.diffusion.sigma_min, cfg.diffusion.sigma_max
+                ).to(device)
 
                 produced = 0
-                while produced < fid_num:
-                    b = min(batch_sz, fid_num - produced)
+                while produced < cfg.training.fid_num_samples:
+                    b = min(batch_sz, cfg.training.fid_num_samples - produced)
                     xgen = euler_sample(
                         model,
                         sigmas,
