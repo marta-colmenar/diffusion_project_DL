@@ -12,6 +12,8 @@ from torchvision.utils import save_image
 import torch.nn.functional as F
 from typing import Union
 from datetime import datetime
+from src.common import euler_sample, c_funcs
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
@@ -23,18 +25,6 @@ from src.sigma import sample_sigma, build_sigma_schedule
 
 # TODO: add pre-commit hooks to check formatting, linting, type hints, etc.
 # TODO: enable wandb?
-
-def c_funcs(sigma: torch.Tensor, sigma_data: float):
-    # sigma: (B,)
-    sd = sigma_data
-    denom = torch.sqrt(sd ** 2 + sigma ** 2)
-    c_in = 1.0 / denom
-    c_out = sigma * sd / denom
-    # TODO: it could be written more efficiently without recomputing denom
-    c_skip = (sd ** 2) / (sd ** 2 + sigma ** 2)
-    c_noise = torch.log(sigma) / 4.0
-    return c_in, c_out, c_skip, c_noise
-
 
 def add_noise(y: torch.Tensor, sigma: torch.Tensor) -> torch.Tensor:
     # y: (B,C,H,W), sigma: (B,)
@@ -77,31 +67,6 @@ def export_real_images(valid_loader, outdir: Union[Path, str], n: int = 500):
             save_image(imgs[i], outdir / f"real_{saved:05d}.png")
             saved += 1
     return saved
-
-# simple Euler sampler used for FID generation inside training
-# FIXME: this function is duplicated in src/sampling.py; refactor later
-# FIXME: also use c_funcs from src/sampling.py
-# TODO: handle eval and train switching outside? use model.training?
-def euler_sample_batch(model, sigmas, n, channels, H, sigma_data, device):
-    model.eval()
-    with torch.no_grad():
-        x = torch.randn(n, channels, H, H, device=device) * sigmas[0].to(device)
-        for i, sigma in enumerate(sigmas):
-            sigma = sigma.to(device)
-            sigma_next = sigmas[i + 1].to(device) if i + 1 < len(sigmas) else torch.tensor(0.0, device=device)
-            sigma_b = sigma.repeat(n)
-            denom = torch.sqrt(sigma_data ** 2 + sigma_b ** 2)
-            c_in = 1.0 / denom
-            c_out = sigma_b * sigma_data / denom
-            c_skip = (sigma_data ** 2) / (sigma_data ** 2 + sigma_b ** 2)
-            c_noise = torch.log(sigma_b) / 4.0
-            cin_x = c_in.view(-1, 1, 1, 1) * x
-            pred = model(cin_x, c_noise.to(device))
-            x_denoised = c_skip.view(-1, 1, 1, 1) * x + c_out.view(-1, 1, 1, 1) * pred
-            d = (x - x_denoised) / sigma.view(1, 1, 1, 1)
-            x = x + d * (sigma_next - sigma).view(1, 1, 1, 1)
-    model.train()
-    return x
 
 def train_model(config_path: str = "configs/train.yaml"):
     # TODO: make config yaml dataclass and validate fields. Only bonus.
@@ -216,7 +181,7 @@ def train_model(config_path: str = "configs/train.yaml"):
                 produced = 0
                 while produced < fid_num:
                     b = min(batch_sz, fid_num - produced)
-                    xgen = euler_sample_batch(model, sigmas, b, info.image_channels, info.image_size, sigma_data, device)
+                    xgen = euler_sample(model, sigmas, b, info.image_channels, info.image_size, sigma_data, device)
                     imgs = xgen.clamp(-1, 1).add(1).div(2)  # to [0,1]
                     for i in range(imgs.size(0)):
                         save_image(imgs[i], Path(fake_dir) / f"sample_{produced:05d}.png")
