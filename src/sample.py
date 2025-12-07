@@ -1,13 +1,14 @@
 import argparse
+import glob
 import os
 import sys
 from pathlib import Path
+from typing import Optional
 
 import torch
-from torchvision.utils import make_grid, save_image
 import yaml
-import glob
-from typing import Optional
+from torchvision.utils import make_grid, save_image
+
 from src.common import euler_sample
 
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -15,10 +16,11 @@ if _PROJECT_ROOT not in sys.path:
     sys.path.insert(0, _PROJECT_ROOT)
 
 from src.data import load_dataset_and_make_dataloaders
-from src.sigma import build_sigma_schedule
 from src.model import Model
+from src.sigma import build_sigma_schedule
 
 # TODO: should we do FID calculation here after sampling? Probably not, keep separate.
+
 
 def build_model_for_sampling(info, device, cfg_path="configs/train.yaml"):
     # load optional config for model hyperparams (safe)
@@ -35,7 +37,7 @@ def build_model_for_sampling(info, device, cfg_path="configs/train.yaml"):
     num_blocks = cfg.get("num_blocks", 4)
     cond_channels = cfg.get("cond_channels", 64)
     image_channels = getattr(info, "image_channels", 1)
-    conditioned=cfg.get("conditioned", True)
+    conditioned = cfg.get("conditioned", True)
 
     m = Model(
         image_channels=image_channels,
@@ -48,6 +50,7 @@ def build_model_for_sampling(info, device, cfg_path="configs/train.yaml"):
     m.to(device)
     m.eval()
     return m
+
 
 def load_ckpt_into_model(model, ckpt_path, device):
     ck = torch.load(ckpt_path, map_location=device)
@@ -68,10 +71,12 @@ def find_latest_checkpoint(checkpoints_dir: str = "checkpoints") -> Optional[str
     latest_pt = os.path.join(checkpoints_dir, "latest.pt")
     if os.path.exists(latest_pt):
         return latest_pt
-    patterns = [os.path.join(checkpoints_dir, "model_epoch_*.pth"),
-                os.path.join(checkpoints_dir, "model_epoch_*.pt"),
-                os.path.join(checkpoints_dir, "*.pth"),
-                os.path.join(checkpoints_dir, "*.pt")]
+    patterns = [
+        os.path.join(checkpoints_dir, "model_epoch_*.pth"),
+        os.path.join(checkpoints_dir, "model_epoch_*.pt"),
+        os.path.join(checkpoints_dir, "*.pth"),
+        os.path.join(checkpoints_dir, "*.pt"),
+    ]
     candidates = []
     for p in patterns:
         candidates.extend(glob.glob(p))
@@ -97,7 +102,9 @@ def main():
     Path(args.outdir).mkdir(parents=True, exist_ok=True)
 
     # get dataset info (sigma_data, channels, image size)
-    _, info = load_dataset_and_make_dataloaders(dataset_name=args.dataset, root_dir=args.data_root, batch_size=1)
+    _, info = load_dataset_and_make_dataloaders(
+        dataset_name=args.dataset, root_dir=args.data_root, batch_size=1
+    )
     channels = info.image_channels
     H = info.image_size
     sigma_data = float(info.sigma_data)
@@ -110,7 +117,9 @@ def main():
             ckpt = found
             print("No ckpt at", args.ckpt, "-> using latest checkpoint:", ckpt)
         else:
-            raise FileNotFoundError(f"No checkpoint found at {args.ckpt} and no files in checkpoints/")
+            raise FileNotFoundError(
+                f"No checkpoint found at {args.ckpt} and no files in checkpoints/"
+            )
 
     model = build_model_for_sampling(info, device)
     model = load_ckpt_into_model(model, ckpt, device)

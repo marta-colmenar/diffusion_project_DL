@@ -1,24 +1,25 @@
+import logging
 import os
+import shutil
+import subprocess
 import sys
-import yaml
+from datetime import datetime
 from pathlib import Path
+from typing import Union
 
 import torch
-import shutil
-import torch.optim as optim
-import subprocess
-from torchvision.utils import save_image
 import torch.nn.functional as F
-from typing import Union
-from datetime import datetime
-import logging
-from src.common import euler_sample, c_funcs
+import torch.optim as optim
+import yaml
+from torchvision.utils import save_image
+
+from src.common import c_funcs, euler_sample
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 ch = logging.StreamHandler()
 ch.setLevel(logging.INFO)
-formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 ch.setFormatter(formatter)
 logger.addHandler(ch)
 
@@ -28,10 +29,11 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from src.data import load_dataset_and_make_dataloaders
 from src.model import Model
-from src.sigma import sample_sigma, build_sigma_schedule
+from src.sigma import build_sigma_schedule, sample_sigma
 
 # TODO: add pre-commit hooks to check formatting, linting, type hints, etc.
 # TODO: enable wandb?
+
 
 def add_noise(y: torch.Tensor, sigma: torch.Tensor) -> torch.Tensor:
     # y: (B,C,H,W), sigma: (B,)
@@ -41,20 +43,21 @@ def add_noise(y: torch.Tensor, sigma: torch.Tensor) -> torch.Tensor:
 
 def _get_train_loader(dl):
     # support both dict and simple namespace with .train
-    if isinstance(dl, dict) and 'train' in dl:
-        return dl['train']
-    if (train := getattr(dl, 'train', None)) is not None:
+    if isinstance(dl, dict) and "train" in dl:
+        return dl["train"]
+    if (train := getattr(dl, "train", None)) is not None:
         return train
     return dl  # assume it's already an iterable
 
 
 def _get_valid_loader(dl):
-    if isinstance(dl, dict) and 'valid' in dl:
-        return dl['valid']
-    if (valid := getattr(dl, 'valid', None)) is not None:
+    if isinstance(dl, dict) and "valid" in dl:
+        return dl["valid"]
+    if (valid := getattr(dl, "valid", None)) is not None:
         return valid
     # if only one loader provided, return it (best-effort)
     return dl
+
 
 # helper to export real images for FID
 def export_real_images(valid_loader, outdir: Union[Path, str], n: int = 500):
@@ -74,6 +77,7 @@ def export_real_images(valid_loader, outdir: Union[Path, str], n: int = 500):
             save_image(imgs[i], outdir / f"real_{saved:05d}.png")
             saved += 1
     return saved
+
 
 def train_model(config_path: str = "configs/train.yaml"):
     # TODO: make config yaml dataclass and validate fields. Only bonus.
@@ -134,7 +138,9 @@ def train_model(config_path: str = "configs/train.yaml"):
             b = y.size(0)
             # sample per-sample sigma
             # TODO: does it make sense that sigma_min and sigma_max are same as sampling?
-            sigma = sample_sigma(b, sigma_min=sigma_min, sigma_max=sigma_max).to(device)  # (B,)
+            sigma = sample_sigma(b, sigma_min=sigma_min, sigma_max=sigma_max).to(
+                device
+            )  # (B,)
             x = add_noise(y, sigma)
 
             c_in, c_out, c_skip, c_noise = c_funcs(sigma, sigma_data)
@@ -161,7 +167,14 @@ def train_model(config_path: str = "configs/train.yaml"):
         # save checkpoint
         if (epoch + 1) % checkpoint_freq == 0:
             ckpt_path = os.path.join(checkpoint_dir, f"model_epoch_{epoch+1}.pth")
-            torch.save({"epoch": epoch + 1, "model_state": model.state_dict(), "optimizer_state": optimizer.state_dict()}, ckpt_path)
+            torch.save(
+                {
+                    "epoch": epoch + 1,
+                    "model_state": model.state_dict(),
+                    "optimizer_state": optimizer.state_dict(),
+                },
+                ckpt_path,
+            )
             logger.info(f"Saved checkpoint: {ckpt_path}")
 
         # Optional FID evaluation (after checkpoint saved)
@@ -185,30 +198,50 @@ def train_model(config_path: str = "configs/train.yaml"):
                 steps = cfg.get("fid_steps", 50)
                 rho = cfg.get("fid_rho", 7.0)
                 # TODO: we are not using sigma_min and sigma_max from training config here
-                sigmas = build_sigma_schedule(steps, rho, sigma_min, sigma_max).to(device)
+                sigmas = build_sigma_schedule(steps, rho, sigma_min, sigma_max).to(
+                    device
+                )
 
                 produced = 0
                 while produced < fid_num:
                     b = min(batch_sz, fid_num - produced)
-                    xgen = euler_sample(model, sigmas, b, info.image_channels, info.image_size, sigma_data, device)
+                    xgen = euler_sample(
+                        model,
+                        sigmas,
+                        b,
+                        info.image_channels,
+                        info.image_size,
+                        sigma_data,
+                        device,
+                    )
                     imgs = xgen.clamp(-1, 1).add(1).div(2)  # to [0,1]
                     for i in range(imgs.size(0)):
-                        save_image(imgs[i], Path(fake_dir) / f"sample_{produced:05d}.png")
+                        save_image(
+                            imgs[i], Path(fake_dir) / f"sample_{produced:05d}.png"
+                        )
                         produced += 1
 
                 logger.info(f"Saved {produced} generated images to {fake_dir}")
 
                 # call pytorch-fid CLI
                 try:
-                    subprocess.check_call([
-                        "pytorch-fid",
-                        "--device", "cuda" if torch.cuda.is_available() else "cpu", 
-                        str(real_dir), str(fake_dir),
-                    ])
+                    subprocess.check_call(
+                        [
+                            "pytorch-fid",
+                            "--device",
+                            "cuda" if torch.cuda.is_available() else "cpu",
+                            str(real_dir),
+                            str(fake_dir),
+                        ]
+                    )
                 except FileNotFoundError:
-                    logger.error("pytorch-fid not installed; install with `pip install pytorch-fid` to compute FID")
+                    logger.error(
+                        "pytorch-fid not installed; install with `pip install pytorch-fid` to compute FID"
+                    )
                 except subprocess.CalledProcessError as e:
-                    logger.error("pytorch-fid returned non-zero exit code:", e.returncode)
+                    logger.error(
+                        "pytorch-fid returned non-zero exit code:", e.returncode
+                    )
                 model.train()
 
     return model
