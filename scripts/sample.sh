@@ -7,4 +7,4 @@
 export PYTHONPATH=$(pwd)/src
 
 # Run the sampling script
-python src/sample.py
+python -m src.sample

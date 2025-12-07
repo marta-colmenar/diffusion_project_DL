@@ -13,4 +13,4 @@
 
 source venv/bin/activate
 export PYTHONPATH=$(pwd)/src
-python src/train.py --config configs/train.yaml
+python -m src.train --config configs/train.yaml

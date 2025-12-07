@@ -10,11 +10,6 @@ import yaml
 from torchvision.utils import make_grid, save_image
 
 from src.common import euler_sample
-
-_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if _PROJECT_ROOT not in sys.path:
-    sys.path.insert(0, _PROJECT_ROOT)
-
 from src.data import load_dataset_and_make_dataloaders
 from src.model import Model
 from src.sigma import build_sigma_schedule
@@ -25,7 +20,8 @@ from src.sigma import build_sigma_schedule
 def build_model_for_sampling(info, device, cfg_path="configs/train.yaml"):
     # load optional config for model hyperparams (safe)
     cfg = {}
-    cfg_file = os.path.join(_PROJECT_ROOT, cfg_path)
+    # FIXME: pathlib consistency
+    cfg_file = os.path.join("configs", "train.yaml")
     if os.path.exists(cfg_file):
         try:
             with open(cfg_file, "r") as f:
@@ -33,6 +29,7 @@ def build_model_for_sampling(info, device, cfg_path="configs/train.yaml"):
         except Exception:
             cfg = {}
 
+    # FIXME: implement pydantic Config class
     nb_channels = cfg.get("nb_channels", 64)
     num_blocks = cfg.get("num_blocks", 4)
     cond_channels = cfg.get("cond_channels", 64)
