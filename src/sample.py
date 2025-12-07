@@ -8,7 +8,7 @@ from torchvision.utils import make_grid, save_image
 import yaml
 import glob
 from typing import Optional
-import time
+from src.common import euler_sample
 
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _PROJECT_ROOT not in sys.path:
@@ -18,6 +18,7 @@ from src.data import load_dataset_and_make_dataloaders
 from src.sigma import build_sigma_schedule
 from src.model import Model
 
+# TODO: should we do FID calculation here after sampling? Probably not, keep separate.
 
 def build_model_for_sampling(info, device, cfg_path="configs/train.yaml"):
     # load optional config for model hyperparams (safe)
@@ -96,7 +97,7 @@ def main():
     Path(args.outdir).mkdir(parents=True, exist_ok=True)
 
     # get dataset info (sigma_data, channels, image size)
-    dl, info = load_dataset_and_make_dataloaders(dataset_name=args.dataset, root_dir=args.data_root, batch_size=1)
+    _, info = load_dataset_and_make_dataloaders(dataset_name=args.dataset, root_dir=args.data_root, batch_size=1)
     channels = info.image_channels
     H = info.image_size
     sigma_data = float(info.sigma_data)
