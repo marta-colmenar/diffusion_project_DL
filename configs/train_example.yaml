@@ -8,6 +8,7 @@ training:
   checkpoint_freq: 10
   learning_rate: 0.0001
   num_epochs: 100
+  cfg_drop_prob: 0.1
   
 data:
   dataset_name: "FashionMNIST"
@@ -20,8 +21,8 @@ model:
   nb_channels: 64
   num_blocks: 4
   cond_channels: 64
-  conditioned: False # Refers to noise (sigma) conditioning
-  class_conditioned: False
+  conditioned: True # Refers to noise (sigma) conditioning
+  cf_guidance: True # Refers to classifier-free guidance
 
 diffusion:
   sigma_min: 0.002

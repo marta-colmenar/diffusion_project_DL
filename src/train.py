@@ -100,7 +100,7 @@ def train_model(config_path: str = "configs/train.yaml") -> Model:
     valid_loader = _get_valid_loader(dataloaders)
     sigma_data = float(info.sigma_data)
 
-    num_classes = info.num_classes if cfg.model.class_conditioned else 0
+    num_classes = info.num_classes if cfg.model.cf_guidance else 0
     model = Model(
         image_channels=getattr(info, "image_channels", 1),
         nb_channels=cfg.model.nb_channels,
@@ -121,6 +121,13 @@ def train_model(config_path: str = "configs/train.yaml") -> Model:
         for batch in train_loader:
 
             y, labels = batch[0].to(device), batch[1].to(device)
+
+            # Apply classifier-free guidance dropout
+            if cfg.model.cf_guidance:
+                labels = labels.clone()
+                use_uncond = torch.rand(labels.size(), device=labels.device) < cfg.training.cfg_drop_prob  # type: ignore
+                labels[use_uncond] = -1
+
             b = y.size(0)
             # sample per-sample sigma
             # TODO: does it make sense that sigma_min and sigma_max are same as sampling?

@@ -58,15 +58,19 @@ class Model(nn.Module):
 
         cond = self.noise_emb(c_noise)
 
-        if self.class_emb is not None and labels is not None:
-            class_cond = self.class_emb(labels)
-            cond += (
-                class_cond  # (B, cond_channels), so that cond_channels does not change
-            )
-        else:
-            assert (
-                self.class_emb is None
-            ), "Labels must be provided for class-conditioned model."
+        if self.class_emb is not None:
+            if labels is not None:
+                # labels: (B,)
+                # unconditional samples marked with -1
+                mask = labels == -1
+                # create full embedding, but fill unconditional ones with zeros
+                class_cond = torch.zeros_like(cond)
+                if (~mask).any():
+                    class_cond[~mask] = self.class_emb(labels[~mask])
+            else:
+                class_cond = torch.zeros_like(cond)
+
+            cond += class_cond
 
         x = self.conv_in(noisy_input)
         for block in self.blocks:

@@ -1,7 +1,10 @@
+import logging
 from pathlib import Path
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
+
+logger = logging.getLogger(__name__)
 
 
 class DataConfig(BaseModel):
@@ -21,7 +24,7 @@ class ModelConfig(BaseModel):
     num_blocks: int = 4
     cond_channels: int = 64
     conditioned: bool = True  # Noise conditioning
-    class_conditioned: bool = False  # Class label conditioning
+    cf_guidance: bool = False  # Classifier-free guidance
 
 
 class DiffusionConfig(BaseModel):
@@ -45,6 +48,7 @@ class TrainingConfig(BaseModel):
     checkpoint_freq: int = 10
     learning_rate: float = 1e-4
     num_epochs: int = 100
+    cfg_drop_prob: Optional[float] = None
 
 
 class Config(BaseModel):
@@ -65,11 +69,16 @@ class Config(BaseModel):
 
         with open(path, "r") as f:
             raw_config = yaml.safe_load(f)
-        return cls(**raw_config)
+        res = cls(**raw_config)
 
-    def save_to_yaml(self, path: Path):
-        """Saves the configuration to a YAML file."""
-        import yaml
+        if not res.model.cf_guidance and res.training.cfg_drop_prob is not None:
+            logger.warning(
+                "cfg_drop_prob is set but cf_guidance is False. cfg_drop_prob will be ignored."
+            )
+        if res.model.cf_guidance and res.training.cfg_drop_prob is None:
+            logger.error(
+                "cf_guidance is True but cfg_drop_prob is not set. Consider setting cfg_drop_prob for classifier-free guidance dropout."
+            )
+            raise
 
-        with open(path, "w") as f:
-            yaml.dump(self.model_dump(), f)
+        return res
