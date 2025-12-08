@@ -15,7 +15,9 @@ venv/
 /samples/
 /*.sqlite
 *.db
-/configs/train.yaml
+
+/configs/*
+!configs/*_example.yaml
 
 # macOS
 .DS_Store
