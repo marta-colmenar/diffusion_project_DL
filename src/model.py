@@ -30,6 +30,10 @@ class Model(nn.Module):
         self._initialize_blocks(nb_channels, cond_channels, num_blocks, conditioned)
         self.conv_out = nn.Conv2d(nb_channels, image_channels, kernel_size=3, padding=1)
 
+        # According to assignment, we could initialize last conv to zero when conditioned
+        if self.conditioned:
+            nn.init.zeros_(self.conv_out.weight)
+
     def _initialize_blocks(
         self, nb_channels, cond_channels, num_blocks, conditioned=True
     ):
@@ -54,12 +58,15 @@ class Model(nn.Module):
 
         cond = self.noise_emb(c_noise)
 
-        # FIXME: what happens if labels is None but class_emb is not None?
         if self.class_emb is not None and labels is not None:
             class_cond = self.class_emb(labels)
             cond += (
                 class_cond  # (B, cond_channels), so that cond_channels does not change
             )
+        else:
+            assert (
+                self.class_emb is None
+            ), "Labels must be provided for class-conditioned model."
 
         x = self.conv_in(noisy_input)
         for block in self.blocks:

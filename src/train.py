@@ -100,12 +100,14 @@ def train_model(config_path: str = "configs/train.yaml") -> Model:
     valid_loader = _get_valid_loader(dataloaders)
     sigma_data = float(info.sigma_data)
 
+    num_classes = info.num_classes if cfg.model.class_conditioned else 0
     model = Model(
         image_channels=getattr(info, "image_channels", 1),
         nb_channels=cfg.model.nb_channels,
         num_blocks=cfg.model.num_blocks,
         cond_channels=cfg.model.cond_channels,
         conditioned=cfg.model.conditioned,
+        num_classes=num_classes,
     ).to(device)
 
     optimizer = optim.Adam(model.parameters(), lr=cfg.training.learning_rate)
@@ -116,13 +118,8 @@ def train_model(config_path: str = "configs/train.yaml") -> Model:
         # pbar = tqdm(train_loader, desc=f"epoch {epoch+1}/{num_epochs}")
         epoch_loss = 0.0
         for batch in train_loader:
-            if isinstance(batch, (list, tuple)):
-                y = batch[0].to(device)
-                labels = batch[1].to(device)
-            else:
-                y = batch.to(device)
-                labels = None
 
+            y, labels = batch[0].to(device), batch[1].to(device)
             b = y.size(0)
             # sample per-sample sigma
             # TODO: does it make sense that sigma_min and sigma_max are same as sampling?
@@ -137,6 +134,7 @@ def train_model(config_path: str = "configs/train.yaml") -> Model:
             cin_x = c_in.view(-1, 1, 1, 1) * x
 
             # forward: model(cin * x, c_noise)
+            # labels are internally ignored if model is not class-conditioned
             pred = model(cin_x, c_noise.to(device), labels=labels)
 
             # target = (y - c_skip * x) / c_out
@@ -149,7 +147,6 @@ def train_model(config_path: str = "configs/train.yaml") -> Model:
 
             step_loss = loss.item()
             epoch_loss += step_loss
-            # pbar.set_postfix({"loss": f"{step_loss:.4f}"})
 
         avg_epoch_loss = epoch_loss / len(train_loader)
         logger.info(f"Epoch {epoch+1} avg loss: {avg_epoch_loss:.4f}")
