@@ -114,6 +114,7 @@ def train_model(config_path: str = "configs/train.yaml") -> Model:
     num_epochs = cfg.training.num_epochs
 
     model.train()
+    epoch_losses = []
     for epoch in range(num_epochs):
         # pbar = tqdm(train_loader, desc=f"epoch {epoch+1}/{num_epochs}")
         epoch_loss = 0.0
@@ -149,6 +150,7 @@ def train_model(config_path: str = "configs/train.yaml") -> Model:
             epoch_loss += step_loss
 
         avg_epoch_loss = epoch_loss / len(train_loader)
+        epoch_losses.append((epoch, avg_epoch_loss))
         logger.info(f"Epoch {epoch+1} avg loss: {avg_epoch_loss:.4f}")
 
         # save checkpoint
@@ -232,6 +234,9 @@ def train_model(config_path: str = "configs/train.yaml") -> Model:
                     )
                 model.train()
 
+    with open(run_dir / "losses.txt", "w") as f:
+        for epoch, loss in epoch_losses:
+            f.write(f"{epoch:04d}, {loss:.6f}\n")
     return model
 
 
