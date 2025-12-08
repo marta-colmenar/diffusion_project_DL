@@ -2,7 +2,6 @@ import logging
 import os
 import shutil
 import subprocess
-import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Union
@@ -10,7 +9,6 @@ from typing import Union
 import torch
 import torch.nn.functional as F
 import torch.optim as optim
-import yaml
 from torchvision.utils import save_image
 
 from src.common import c_funcs, euler_sample
@@ -24,16 +22,9 @@ formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(messag
 ch.setFormatter(formatter)
 logger.addHandler(ch)
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
-
 from src.data import load_dataset_and_make_dataloaders
 from src.model import Model
 from src.sigma import build_sigma_schedule, sample_sigma
-
-# TODO: add pre-commit hooks to check formatting, linting, type hints, etc.
-# TODO: enable wandb?
 
 
 def add_noise(y: torch.Tensor, sigma: torch.Tensor) -> torch.Tensor:
@@ -80,7 +71,7 @@ def export_real_images(valid_loader, outdir: Union[Path, str], n: int = 500):
     return saved
 
 
-def train_model(config_path: str = "configs/train.yaml"):
+def train_model(config_path: str = "configs/train.yaml") -> Model:
 
     cfg = Config.load_from_yaml(Path(config_path))
 
@@ -223,6 +214,7 @@ def train_model(config_path: str = "configs/train.yaml"):
                 logger.info(f"Saved {produced} generated images to {fake_dir}")
 
                 # call pytorch-fid CLI
+                # FIXME: run this in a separate function and avoid training all the time..
                 try:
                     subprocess.check_call(
                         [
@@ -247,4 +239,10 @@ def train_model(config_path: str = "configs/train.yaml"):
 
 
 if __name__ == "__main__":
-    train_model("configs/train.yaml")
+    import argparse
+
+    p = argparse.ArgumentParser()
+    p.add_argument("--config", type=str, default="configs/train.yaml")
+    args = p.parse_args()
+
+    train_model(args.config)

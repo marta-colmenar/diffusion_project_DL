@@ -1,7 +1,7 @@
 #!/bin/bash
 
 #SBATCH --job-name="diffusion_model"
-#SBATCH --time=02:00:00
+#SBATCH --time=08:00:00
 #SBATCH --ntasks=1
 #SBATCH --account=invest
 #SBATCH --partition=gpu-invest
@@ -12,5 +12,6 @@
 #SBATCH --mem-per-cpu=8G
 
 source venv/bin/activate
-export PYTHONPATH=$(pwd)/src
-python -m src.train --config configs/train.yaml
+python -m src.train --config configs/train_unconditioned.yaml
+python -m src.train --config configs/train_conditioned.yaml
+python -m src.train --config configs/train_conditioned_class.yaml
