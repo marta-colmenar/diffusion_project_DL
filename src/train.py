@@ -33,24 +33,6 @@ def add_noise(y: torch.Tensor, sigma: torch.Tensor) -> torch.Tensor:
     return y + sigma.view(-1, 1, 1, 1) * eps
 
 
-def _get_train_loader(dl):
-    # support both dict and simple namespace with .train
-    if isinstance(dl, dict) and "train" in dl:
-        return dl["train"]
-    if (train := getattr(dl, "train", None)) is not None:
-        return train
-    return dl  # assume it's already an iterable
-
-
-def _get_valid_loader(dl):
-    if isinstance(dl, dict) and "valid" in dl:
-        return dl["valid"]
-    if (valid := getattr(dl, "valid", None)) is not None:
-        return valid
-    # if only one loader provided, return it (best-effort)
-    return dl
-
-
 # helper to export real images for FID
 def export_real_images(valid_loader, outdir: Union[Path, str], n: int = 500):
     outdir = Path(outdir)
@@ -96,8 +78,8 @@ def train_model(config_path: str = "configs/train.yaml") -> Model:
         pin_memory=cfg.data.pin_memory,
     )
 
-    train_loader = _get_train_loader(dataloaders)
-    valid_loader = _get_valid_loader(dataloaders)
+    train_loader = dataloaders.train
+    valid_loader = dataloaders.valid
     sigma_data = float(info.sigma_data)
 
     num_classes = info.num_classes if cfg.model.cf_guidance else 0
