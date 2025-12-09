@@ -12,7 +12,7 @@ training:
   
 data:
   dataset_name: "FashionMNIST"
-  data_root: "data"
+  data_root: "data" # put abspath
   batch_size: 64
   num_workers: 4
   pin_memory: true

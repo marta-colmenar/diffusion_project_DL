@@ -38,6 +38,7 @@ def load_dataset(
         train_dataset = FashionMNIST(root_dir, download=True, transform=t)
         train_dataset, valid_dataset = random_split(train_dataset, [50000, 10000])
         num_classes = 10
+        c, h, sigma_data = 1, 32, 0.6648
 
     elif dataset_name == "CelebA":
         t = T.Compose(
@@ -48,17 +49,21 @@ def load_dataset(
                 T.Normalize(mean=(0.5,), std=(0.5,)),
             ]
         )
-        train_dataset = CelebA(root_dir, download=True, transform=t)
+        # Download disabled due to issues with GDrive
+        train_dataset = CelebA(root_dir, download=False, transform=t)
         train_dataset, valid_dataset = random_split(train_dataset, [150000, 12770])
         num_classes = 2
+        c, h, sigma_data = 3, 128, 0.5881
 
     else:
         raise ValueError(f"Unknown dataset_name: {dataset_name}")
 
-    x, _ = next(iter(DataLoader(train_dataset, batch_size=10000, shuffle=True)))
-    _, c, h, w = x.size()
-    assert h == w
-    sigma_data = x.std()
+    # This took very long for celebA; computed once and put above, hardcoded
+    # x, _ = next(iter(DataLoader(train_dataset, batch_size=10000, shuffle=True)))
+    # _, c, h, w = x.size()
+    # assert h == w
+    # sigma_data = x.std()
+    # print(c, h, sigma_data)
 
     return train_dataset, valid_dataset, DataInfo(c, h, num_classes, sigma_data)
 
