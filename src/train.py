@@ -1,7 +1,6 @@
 import logging
 import os
 import shutil
-import subprocess
 from datetime import datetime
 from pathlib import Path
 from typing import Union
@@ -13,6 +12,7 @@ from torchvision.utils import save_image
 
 from src.common import c_funcs, euler_sample
 from src.config import Config
+from src.utils import compute_fid, save_fid_real_stats
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -31,26 +31,6 @@ def add_noise(y: torch.Tensor, sigma: torch.Tensor) -> torch.Tensor:
     # y: (B,C,H,W), sigma: (B,)
     eps = torch.randn_like(y)
     return y + sigma.view(-1, 1, 1, 1) * eps
-
-
-# helper to export real images for FID
-def export_real_images(valid_loader, outdir: Union[Path, str], n: int = 500):
-    outdir = Path(outdir)
-    outdir.mkdir(parents=True, exist_ok=True)
-    saved = 0
-    for batch in valid_loader:
-        if isinstance(batch, (list, tuple)):
-            x = batch[0]
-        else:
-            x = batch
-        # TODO: image processing can be unified later, it's repeated
-        imgs = x.clamp(-1, 1).add(1).div(2)  # to [0,1]
-        for i in range(imgs.size(0)):
-            if saved >= n:
-                return saved
-            save_image(imgs[i], outdir / f"real_{saved:05d}.png")
-            saved += 1
-    return saved
 
 
 def train_model(config_path: str = "configs/train.yaml") -> Model:
@@ -81,6 +61,12 @@ def train_model(config_path: str = "configs/train.yaml") -> Model:
     train_loader = dataloaders.train
     valid_loader = dataloaders.valid
     sigma_data = float(info.sigma_data)
+
+    real_stats_fname = Path(cfg.data.data_root) / (cfg.data.dataset_name + "_stats.npz")
+    if cfg.training.evaluation_metric == "FID":
+        if not real_stats_fname.exists():
+            save_fid_real_stats(valid_loader, real_stats_fname, n=1000)
+            assert real_stats_fname.exists()
 
     num_classes = info.num_classes if cfg.model.cf_guidance else 0
     model = Model(
@@ -159,18 +145,9 @@ def train_model(config_path: str = "configs/train.yaml") -> Model:
         if cfg.training.evaluation_metric == "FID":
             if (epoch + 1) % fid_freq == 0:
                 model.eval()
-                real_dir = cfg.data.data_root / (cfg.data.dataset_name + "_fid_real")
+
                 fake_dir = os.path.join(run_dir, "fid_samples", f"epoch_{epoch+1}")
                 Path(fake_dir).mkdir(parents=True, exist_ok=True)
-
-                # export real images if missing
-                # FIXME: the loop won't enter if fid_num_samples changed after first run
-                if not Path(real_dir).exists() or not any(Path(real_dir).iterdir()):
-                    logger.info("Exporting real images for FID into", real_dir)
-                    saved = export_real_images(
-                        valid_loader, real_dir, n=cfg.training.fid_num_samples
-                    )
-                    logger.info(f"Exported {saved} real images for FID")
 
                 # generate fake images and save
                 batch_sz = cfg.data.batch_size
@@ -183,6 +160,7 @@ def train_model(config_path: str = "configs/train.yaml") -> Model:
                 produced = 0
                 while produced < cfg.training.fid_num_samples:
                     b = min(batch_sz, cfg.training.fid_num_samples - produced)
+                    # FIXME: update sample to handle class conditioning
                     xgen = euler_sample(
                         model,
                         sigmas,
@@ -200,27 +178,9 @@ def train_model(config_path: str = "configs/train.yaml") -> Model:
                         produced += 1
 
                 logger.info(f"Saved {produced} generated images to {fake_dir}")
-
-                # call pytorch-fid CLI
-                # FIXME: run this in a separate function and avoid training all the time..
-                try:
-                    subprocess.check_call(
-                        [
-                            "pytorch-fid",
-                            "--device",
-                            "cuda" if torch.cuda.is_available() else "cpu",
-                            str(real_dir),
-                            str(fake_dir),
-                        ]
-                    )
-                except FileNotFoundError:
-                    logger.error(
-                        "pytorch-fid not installed; install with `pip install pytorch-fid` to compute FID"
-                    )
-                except subprocess.CalledProcessError as e:
-                    logger.error(
-                        "pytorch-fid returned non-zero exit code:", e.returncode
-                    )
+                fid = compute_fid([real_stats_fname, fake_dir], device)
+                # FIXME: if we want to keep it during training, we might want to save FIDs to a file
+                logger.info(f"FID: {fid:.4f}")
                 model.train()
 
     with open(run_dir / "losses.txt", "w") as f:
