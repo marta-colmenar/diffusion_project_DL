@@ -1,5 +1,5 @@
 from collections import namedtuple
-from typing import Optional, Tuple
+from typing import Tuple
 
 import torchvision.transforms as T
 from torch.utils.data import DataLoader, Dataset, default_collate, random_split
@@ -50,7 +50,7 @@ def load_dataset(
         )
         train_dataset = CelebA(root_dir, download=True, transform=t)
         train_dataset, valid_dataset = random_split(train_dataset, [150000, 12770])
-        num_classes = None
+        num_classes = 2
 
     else:
         raise ValueError(f"Unknown dataset_name: {dataset_name}")
@@ -63,20 +63,30 @@ def load_dataset(
     return train_dataset, valid_dataset, DataInfo(c, h, num_classes, sigma_data)
 
 
+def celebA_collate(batch):
+    images, attrs = zip(*batch)
+    images = default_collate(images)  # type: ignore
+    attrs = default_collate(attrs)  # type: ignore
+    last_attr = attrs[:, -1]
+    return images, last_attr
+
+
 def make_dataloaders(
     train_dataset: Dataset,
     valid_dataset: Dataset,
-    num_classes: Optional[int],
+    num_classes: int,
     batch_size: int,
     num_workers: int = 0,
     pin_memory: bool = False,
 ) -> DataLoaders:
 
-    collate_fn = (
-        default_collate
-        if num_classes is not None
-        else lambda batch: (default_collate(batch)[0], None)
-    )
+    assert num_classes in [2, 10]
+
+    if num_classes == 2:
+        collate_fn = celebA_collate
+    else:
+        collate_fn = default_collate
+
     kwargs = {
         "collate_fn": collate_fn,
         "num_workers": num_workers,
