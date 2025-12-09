@@ -117,23 +117,36 @@ class CondBatchNorm2d(nn.Module):
         # Base BatchNorm without affine params (we’ll supply those from cond)
         self.bn = nn.BatchNorm2d(num_features, eps=eps, momentum=momentum, affine=False)
 
+        # Learned base gamma and beta (this is important!)
+        self.weight = nn.Parameter(torch.ones(num_features))
+        self.bias = nn.Parameter(torch.zeros(num_features))
+
         # Linear layer maps cond → [gamma, beta]
         self.modulation = nn.Linear(cond_channels, 2 * num_features)
 
-        # Initialize modulation so that initially gamma ≈ 1, beta ≈ 0
-        nn.init.zeros_(self.modulation.weight)
+        # Proper initialization: small modulation, not dead
+        nn.init.normal_(self.modulation.weight, mean=0.0, std=0.02)
         nn.init.zeros_(self.modulation.bias)
-        nn.init.constant_(self.modulation.bias[:num_features], 1.0)
 
     def forward(self, x: torch.Tensor, cond: torch.Tensor) -> torch.Tensor:
         # x: (B, C, H, W)
         # cond: (B, cond_channels)
         out = self.bn(x)
-        params = self.modulation(cond)  # (B, 2 * C)
-        B, C = x.shape[0], x.shape[1]
-        gamma, beta = params[:, :C], params[:, C:]
-        gamma = gamma.view(B, C, 1, 1)
-        beta = beta.view(B, C, 1, 1)
+
+        gamma = self.weight.view(1, -1, 1, 1)
+        beta = self.bias.view(1, -1, 1, 1)
+
+        # Conditioning modulation (FiLM)
+        mod = self.modulation(cond)  # (B, 2 * C)
+        B, C, *_ = out.shape
+
+        mod_gamma, mod_beta = mod[:, :C], mod[:, C:]
+        mod_gamma = mod_gamma.view(B, C, 1, 1)
+        mod_beta = mod_beta.view(B, C, 1, 1)
+
+        # Combine base affine + conditioning
+        gamma = gamma + mod_gamma
+        beta = beta + mod_beta
         return gamma * out + beta
 
 
@@ -152,6 +165,7 @@ class CondResidualBlock(nn.Module):
         nn.init.zeros_(self.conv2.weight)
 
     def forward(self, x: torch.Tensor, cond: torch.Tensor) -> torch.Tensor:
+        # FIXME: why SILU here?
         h = self.conv1(F.silu(self.norm1(x, cond)))
         h = self.conv2(F.silu(self.norm2(h, cond)))
         return x + h
