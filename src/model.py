@@ -89,7 +89,7 @@ class NoiseEmbedding(nn.Module):
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         assert input.ndim == 1
-        f = 2 * torch.pi * input.unsqueeze(1) @ self.weight
+        f = 2 * torch.pi * input.unsqueeze(1) @ self.weight  # type: ignore
         return torch.cat([f.cos(), f.sin()], dim=-1)
 
 
@@ -112,41 +112,24 @@ class ResidualBlock(nn.Module):
 
 
 class CondBatchNorm2d(nn.Module):
-    def __init__(self, num_features: int, cond_channels: int, eps=1e-5, momentum=0.1):
+    def __init__(self, num_features: int, cond_channels: int):
         super().__init__()
-        # Base BatchNorm without affine params (we’ll supply those from cond)
-        self.bn = nn.BatchNorm2d(num_features, eps=eps, momentum=momentum, affine=False)
+        self.num_features = num_features
+        self.bn = nn.BatchNorm2d(num_features, affine=False)
+        self.linear = nn.Linear(cond_channels, 2 * num_features)
 
-        # Learned base gamma and beta (this is important!)
-        self.weight = nn.Parameter(torch.ones(num_features))
-        self.bias = nn.Parameter(torch.zeros(num_features))
-
-        # Linear layer maps cond → [gamma, beta]
-        self.modulation = nn.Linear(cond_channels, 2 * num_features)
-
-        # Proper initialization: small modulation, not dead
-        nn.init.normal_(self.modulation.weight, mean=0.0, std=0.02)
-        nn.init.zeros_(self.modulation.bias)
+        nn.init.zeros_(self.linear.weight)
+        # bias = [gamma_bias | beta_bias]
+        self.linear.bias.data[:num_features].fill_(1.0)
+        self.linear.bias.data[num_features:].zero_()
 
     def forward(self, x: torch.Tensor, cond: torch.Tensor) -> torch.Tensor:
         # x: (B, C, H, W)
         # cond: (B, cond_channels)
         out = self.bn(x)
-
-        gamma = self.weight.view(1, -1, 1, 1)
-        beta = self.bias.view(1, -1, 1, 1)
-
-        # Conditioning modulation (FiLM)
-        mod = self.modulation(cond)  # (B, 2 * C)
-        B, C, *_ = out.shape
-
-        mod_gamma, mod_beta = mod[:, :C], mod[:, C:]
-        mod_gamma = mod_gamma.view(B, C, 1, 1)
-        mod_beta = mod_beta.view(B, C, 1, 1)
-
-        # Combine base affine + conditioning
-        gamma = gamma + mod_gamma
-        beta = beta + mod_beta
+        gamma, beta = self.linear(cond)[:, :, None, None].split(
+            self.num_features, dim=1
+        )  # each (B, C)
         return gamma * out + beta
 
 
@@ -165,9 +148,8 @@ class CondResidualBlock(nn.Module):
         nn.init.zeros_(self.conv2.weight)
 
     def forward(self, x: torch.Tensor, cond: torch.Tensor) -> torch.Tensor:
-        # FIXME: why SILU here?
-        h = self.conv1(F.silu(self.norm1(x, cond)))
-        h = self.conv2(F.silu(self.norm2(h, cond)))
+        h = self.conv1(F.relu(self.norm1(x, cond)))
+        h = self.conv2(F.relu(self.norm2(h, cond)))
         return x + h
 
 
