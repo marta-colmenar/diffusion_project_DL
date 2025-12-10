@@ -1,12 +1,14 @@
 import glob
 import logging
 import os
+import pathlib
 import tempfile
+from itertools import islice
 from pathlib import Path
 from typing import Optional
 
 import torch
-from pytorch_fid.fid_score import calculate_fid_given_paths, save_fid_stats
+from cleanfid import fid
 from torchvision.utils import save_image
 
 from src.config import Config
@@ -14,6 +16,10 @@ from src.data import DataInfo
 from src.model import Model
 
 logger = logging.getLogger(__name__)
+
+
+def to_unit_range(x: torch.Tensor) -> torch.Tensor:
+    return x.clamp(-1, 1).add(1).div(2)
 
 
 def build_model_for_sampling(
@@ -78,28 +84,38 @@ def find_latest_checkpoint(checkpoints_dir: str = "checkpoints") -> Optional[str
     return candidates[0]
 
 
-def save_fid_real_stats(valid_loader, output_fname: Path, n: int = 1000, device="cpu"):
-    class Done(Exception):
-        pass
+def save_fid_real_stats(valid_loader, dataset_name: str, n: int = 1_000, device="cpu"):
+    dname = dataset_name.lower()
 
-    with tempfile.TemporaryDirectory(dir="../data") as tempdir:
+    if fid.test_stats_exists(dname, mode="clean"):
+        logger.info(
+            f"FID real stats for '{dataset_name}' already exist, skipping computation."
+        )
+        return
 
-        try:
-            saved = 0
-            for batch in valid_loader:
+    def image_stream():
+        for batch in valid_loader:
+            imgs = to_unit_range(batch[0])
+            for img in imgs:
+                yield img
 
-                x = batch[0]
-                # TODO: image processing can be unified later, it's repeated
-                imgs = x.clamp(-1, 1).add(1).div(2)  # to [0,1]
-                for i in range(imgs.size(0)):
-                    if saved >= n:
-                        raise Done
-                    save_image(imgs[i], Path(tempdir) / f"real_{saved:05d}.png")
-                    saved += 1
+    with tempfile.TemporaryDirectory(
+        dir=pathlib.Path(__file__).parent.resolve() / ".." / "data"
+    ) as tempdir:
 
-        except Done:
-            save_fid_stats([tempdir, output_fname], 50, "cpu", 2048)
+        for idx, img in enumerate(islice(image_stream(), n)):
+            save_image(img, Path(tempdir) / f"real_{idx:05d}.png")
+        fid.make_custom_stats(dname, tempdir, mode="clean", device=torch.device(device))
+
+    assert fid.test_stats_exists(dname, mode="clean"), "Failed to save FID real stats."
 
 
-def compute_fid(paths, device):
-    return calculate_fid_given_paths(paths, 50, device, 2048)
+def compute_fid(gen_path, dataset_name, device):
+    return fid.compute_fid(
+        gen_path,
+        dataset_name=dataset_name.lower(),
+        device=device,
+        mode="clean",
+        dataset_split="custom",
+        num_workers=4,
+    )

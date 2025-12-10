@@ -3,7 +3,6 @@ import os
 import shutil
 from datetime import datetime
 from pathlib import Path
-from typing import Union
 
 import torch
 import torch.nn.functional as F
@@ -12,7 +11,7 @@ from torchvision.utils import save_image
 
 from src.common import c_funcs, euler_sample
 from src.config import Config
-from src.utils import compute_fid, save_fid_real_stats
+from src.utils import compute_fid, save_fid_real_stats, to_unit_range
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -48,7 +47,8 @@ def train_model(config_path: str = "configs/train.yaml") -> Model:
     fid_freq = cfg.training.fid_eval_freq
     checkpoint_freq = cfg.training.checkpoint_freq
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device_str = "cuda" if torch.cuda.is_available() else "cpu"
+    device = torch.device(device_str)
 
     dataloaders, info = load_dataset_and_make_dataloaders(
         dataset_name=cfg.data.dataset_name,
@@ -62,11 +62,14 @@ def train_model(config_path: str = "configs/train.yaml") -> Model:
     valid_loader = dataloaders.valid
     sigma_data = float(info.sigma_data)
 
-    real_stats_fname = Path(cfg.data.data_root) / (cfg.data.dataset_name + "_stats.npz")
     if cfg.training.evaluation_metric == "FID":
-        if not real_stats_fname.exists():
-            save_fid_real_stats(valid_loader, real_stats_fname, n=1000)
-            assert real_stats_fname.exists()
+        logger.info("Checking for real FID stats...")
+        save_fid_real_stats(
+            valid_loader,
+            cfg.data.dataset_name,
+            device=device_str,
+            n=len(valid_loader.dataset),
+        )
 
     num_classes = info.num_classes if cfg.model.cf_guidance else 0
     model = Model(
@@ -84,7 +87,7 @@ def train_model(config_path: str = "configs/train.yaml") -> Model:
     model.train()
     epoch_losses = []
     for epoch in range(num_epochs):
-        # pbar = tqdm(train_loader, desc=f"epoch {epoch+1}/{num_epochs}")
+
         epoch_loss = 0.0
         for batch in train_loader:
 
@@ -98,7 +101,6 @@ def train_model(config_path: str = "configs/train.yaml") -> Model:
 
             b = y.size(0)
             # sample per-sample sigma
-            # TODO: does it make sense that sigma_min and sigma_max are same as sampling?
             sigma = sample_sigma(
                 b, sigma_min=cfg.diffusion.sigma_min, sigma_max=cfg.diffusion.sigma_max
             ).to(
@@ -170,7 +172,7 @@ def train_model(config_path: str = "configs/train.yaml") -> Model:
                         sigma_data,
                         device,
                     )
-                    imgs = xgen.clamp(-1, 1).add(1).div(2)  # to [0,1]
+                    imgs = to_unit_range(xgen)
                     for i in range(imgs.size(0)):
                         save_image(
                             imgs[i], Path(fake_dir) / f"sample_{produced:05d}.png"
@@ -178,7 +180,7 @@ def train_model(config_path: str = "configs/train.yaml") -> Model:
                         produced += 1
 
                 logger.info(f"Saved {produced} generated images to {fake_dir}")
-                fid = compute_fid([real_stats_fname, fake_dir], device)
+                fid = compute_fid(fake_dir, cfg.data.dataset_name, device=device_str)
                 # FIXME: if we want to keep it during training, we might want to save FIDs to a file
                 logger.info(f"FID: {fid:.4f}")
                 model.train()
