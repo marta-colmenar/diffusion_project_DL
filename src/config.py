@@ -37,8 +37,6 @@ class DiffusionConfig(BaseModel):
 class TrainingConfig(BaseModel):
     """Configuration specific to the training loop hyperparameters."""
 
-    # Moved parameters here:
-    log_interval: int = 10
     fid_steps: int = 20
     fid_num_samples: int = 100
 

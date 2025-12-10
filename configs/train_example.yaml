@@ -1,5 +1,4 @@
 training:
-  log_interval: 10
   run_name: "fashion_mnist"
   evaluation_metric: ''
   fid_eval_freq: 10
