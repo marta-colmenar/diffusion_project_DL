@@ -13,6 +13,7 @@ Provides training, sampling (Euler sampler), simple model scaffold and utilities
 
 ## Requirements (macOS)
 - see `pyproject.toml`
+- install with `pip install -e .` from within the project folder
 
 ## Quick start
 
