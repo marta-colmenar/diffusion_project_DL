@@ -1,7 +1,9 @@
 import logging
 import os
 import shutil
+import zipfile
 from datetime import datetime
+from io import BytesIO
 from pathlib import Path
 
 import torch
@@ -85,6 +87,7 @@ def train_model(config_path: str = "configs/train.yaml") -> Model:
 
     model.train()
     epoch_losses = []
+    epoch_fids = []
     for epoch in range(num_epochs):
 
         epoch_loss = 0.0
@@ -147,8 +150,8 @@ def train_model(config_path: str = "configs/train.yaml") -> Model:
             if (epoch + 1) % fid_freq == 0:
                 model.eval()
 
-                fake_dir = os.path.join(run_dir, "fid_samples", f"epoch_{epoch+1}")
-                Path(fake_dir).mkdir(parents=True, exist_ok=True)
+                zip_path = Path(run_dir) / "fid_samples" / f"epoch_{epoch+1}.zip"
+                Path(zip_path.parent).mkdir(parents=True, exist_ok=True)
 
                 # generate fake images and save
                 batch_sz = cfg.data.batch_size
@@ -158,35 +161,49 @@ def train_model(config_path: str = "configs/train.yaml") -> Model:
                     steps, rho, cfg.diffusion.sigma_min, cfg.diffusion.sigma_max
                 ).to(device)
 
-                produced = 0
-                while produced < cfg.training.fid_num_samples:
-                    b = min(batch_sz, cfg.training.fid_num_samples - produced)
-                    # FIXME: update sample to handle class conditioning
-                    xgen = euler_sample(
-                        model,
-                        sigmas,
-                        b,
-                        info.image_channels,
-                        info.image_size,
-                        sigma_data,
-                        device,
-                    )
-                    imgs = to_unit_range(xgen)
-                    for i in range(imgs.size(0)):
-                        save_image(
-                            imgs[i], Path(fake_dir) / f"sample_{produced:05d}.png"
+                with zipfile.ZipFile(
+                    zip_path, "w", compression=zipfile.ZIP_DEFLATED
+                ) as zf:
+                    produced = 0
+                    while produced < cfg.training.fid_num_samples:
+                        b = min(batch_sz, cfg.training.fid_num_samples - produced)
+                        # unconditioned generation
+                        xgen = euler_sample(
+                            model,
+                            sigmas,
+                            b,
+                            info.image_channels,
+                            info.image_size,
+                            sigma_data,
+                            device,
                         )
-                        produced += 1
+                        imgs = to_unit_range(xgen)
 
-                logger.info(f"Saved {produced} generated images to {fake_dir}")
-                fid = compute_fid(fake_dir, cfg.data.dataset_name, device=device_str)
+                        for i in range(imgs.size(0)):
+                            buf = BytesIO()
+                            save_image(imgs[i], buf, format="PNG")
+                            buf.seek(0)
+                            zf.writestr(f"sample_{produced:05d}.png", buf.read())
+                            produced += 1
+
+                logger.info(f"Saved {produced} generated images to {zip_path}")
+                fid = compute_fid(
+                    str(zip_path), cfg.data.dataset_name, device=device_str
+                )
                 # FIXME: if we want to keep it during training, we might want to save FIDs to a file
                 logger.info(f"FID: {fid:.4f}")
+                epoch_fids.append((epoch, fid))
                 model.train()
 
     with open(run_dir / "losses.txt", "w") as f:
         for epoch, loss in epoch_losses:
             f.write(f"{epoch:04d}, {loss:.6f}\n")
+
+    if len(epoch_fids) > 0:
+        with open(run_dir / "fids.txt", "w") as f:
+            for epoch, fid in epoch_fids:
+                f.write(f"{epoch:04d}, {fid:.6f}\n")
+
     return model
 
 
