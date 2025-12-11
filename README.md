@@ -5,24 +5,24 @@ Provides training, sampling (Euler sampler), simple model scaffold and utilities
 
 ## Repo layout
 - src/ — training, sampling, model, data helpers
-- configs/ — training configs (configs/train.yaml)
-- data/ — datasets (downloaded automatically)
-- checkpoints/ — saved model checkpoints
+- configs/ — training configs (see configs/train_example.yaml)
+- data/ — datasets (downloaded automatically - careful to download issues for CelebA)
+- runs/ — saved model run (checkpoints, samples for fids, losses)
 - scripts/ — convenience shell wrappers
 - instructions.ipynb — notebook with background + examples
 
 ## Requirements (macOS)
-- Python 3.9+ (3.10+ recommended)
-- PyTorch (matching your CUDA) and torchvision
-- Optional: gh (GitHub CLI), pytorch-fid for FID
+- see `pyproject.toml`
 
 ## Quick start
+
+The entire project was run on UBELIX (the University of Bern computing cluster), but the scripts can also be run locally
 
 From project root:
 
 1. Train (small smoke):
 ```bash
-# edit configs/train.yaml for small batch/epochs first
+# edit configs/train_example.yaml for small batch/epochs first
 python -m src.train
 ```
 
@@ -33,5 +33,15 @@ python -m src.sample --n 8 --steps 50 --outdir samples
 python -m src.sample --ckpt checkpoints/model_epoch_1.pth --n 8
 ```
 
-3. Inspect saved images:
-- samples/samples_grid.png
+## Best results achieved
+
+### FashionMNIST
+
+- Provided model, without noise conditioning: `python -m src.train PUT_PATH`
+- Provided model, with noise conditioning: `python -m src.train PUT_PATH`
+- Upgraded model, with noise conditioning: `python -m src.train PUT_PATH`
+- Provided model, with noise+class conditioning for Classifier-Free Guidance: `python -m src.train PUT_PATH`
+
+### CelebA
+
+- Upgraded model, with noise conditioning: `python -m src.train PUT_PATH`
