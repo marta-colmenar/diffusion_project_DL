@@ -11,6 +11,9 @@ from torchvision.utils import save_image
 
 from src.common import c_funcs, euler_sample
 from src.config import Config
+from src.data import load_dataset_and_make_dataloaders
+from src.model import Model
+from src.sigma import build_sigma_schedule, sample_sigma
 from src.utils import compute_fid, save_fid_real_stats, to_unit_range
 
 logger = logging.getLogger(__name__)
@@ -20,10 +23,6 @@ ch.setLevel(logging.INFO)
 formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 ch.setFormatter(formatter)
 logger.addHandler(ch)
-
-from src.data import load_dataset_and_make_dataloaders
-from src.model import Model
-from src.sigma import build_sigma_schedule, sample_sigma
 
 
 def add_noise(y: torch.Tensor, sigma: torch.Tensor) -> torch.Tensor:

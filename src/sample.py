@@ -1,87 +1,21 @@
 import argparse
-import glob
 import os
-import sys
 from pathlib import Path
-from typing import Optional
 
 import torch
-import yaml
 from torchvision.utils import make_grid, save_image
 
 from src.common import euler_sample
 from src.data import load_dataset_and_make_dataloaders
-from src.model import Model
 from src.sigma import build_sigma_schedule
+from src.utils import (
+    build_model_for_sampling,
+    find_latest_checkpoint,
+    load_ckpt_into_model,
+    to_unit_range,
+)
 
 # TODO: should we do FID calculation here after sampling? Probably not, keep separate.
-
-
-def build_model_for_sampling(info, device, cfg_path="configs/train.yaml"):
-    # load optional config for model hyperparams (safe)
-    cfg = {}
-    # FIXME: pathlib consistency
-    cfg_file = os.path.join("configs", "train.yaml")
-    if os.path.exists(cfg_file):
-        try:
-            with open(cfg_file, "r") as f:
-                cfg = yaml.safe_load(f) or {}
-        except Exception:
-            cfg = {}
-
-    # FIXME: implement pydantic Config class
-    nb_channels = cfg.get("nb_channels", 64)
-    num_blocks = cfg.get("num_blocks", 4)
-    cond_channels = cfg.get("cond_channels", 64)
-    image_channels = getattr(info, "image_channels", 1)
-    conditioned = cfg.get("conditioned", True)
-
-    m = Model(
-        image_channels=image_channels,
-        nb_channels=nb_channels,
-        num_blocks=num_blocks,
-        cond_channels=cond_channels,
-        conditioned=conditioned,
-    )
-
-    m.to(device)
-    m.eval()
-    return m
-
-
-def load_ckpt_into_model(model, ckpt_path, device):
-    ck = torch.load(ckpt_path, map_location=device)
-    state = ck.get("model_state", ck)
-    try:
-        model.load_state_dict(state)
-    except Exception:
-        # tolerate wrapped dicts
-        if isinstance(state, dict) and "state_dict" in state:
-            model.load_state_dict(state["state_dict"])
-        else:
-            raise
-    return model
-
-
-def find_latest_checkpoint(checkpoints_dir: str = "checkpoints") -> Optional[str]:
-    # prefer explicit latest.pt, else pick most recently modified model_epoch_*.pth/.pt
-    latest_pt = os.path.join(checkpoints_dir, "latest.pt")
-    if os.path.exists(latest_pt):
-        return latest_pt
-    patterns = [
-        os.path.join(checkpoints_dir, "model_epoch_*.pth"),
-        os.path.join(checkpoints_dir, "model_epoch_*.pt"),
-        os.path.join(checkpoints_dir, "*.pth"),
-        os.path.join(checkpoints_dir, "*.pt"),
-    ]
-    candidates = []
-    for p in patterns:
-        candidates.extend(glob.glob(p))
-    if not candidates:
-        return None
-    # return most recently modified
-    candidates.sort(key=lambda x: os.path.getmtime(x), reverse=True)
-    return candidates[0]
 
 
 def main():
@@ -125,8 +59,7 @@ def main():
 
     samples = euler_sample(model, sigmas, args.n, channels, H, sigma_data, device)
 
-    # convert from normalized [-1,1] to [0,1]
-    imgs = samples.clamp(-1, 1).add(1).div(2)
+    imgs = to_unit_range(samples)
     grid = make_grid(imgs, nrow=min(8, args.n))
     out_path = os.path.join(args.outdir, "samples_grid.png")
     # TODO: make_grid is called inside save_image, just pass nrow to it.
