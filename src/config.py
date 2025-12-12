@@ -4,6 +4,8 @@ from typing import Optional
 
 from pydantic import BaseModel
 
+from src.model import ModelNameEnum
+
 logger = logging.getLogger(__name__)
 
 
@@ -20,6 +22,7 @@ class DataConfig(BaseModel):
 class ModelConfig(BaseModel):
     """Configuration for the neural network architecture."""
 
+    model_name: ModelNameEnum = ModelNameEnum.BASIC
     nb_channels: int = 64
     num_blocks: int = 4
     cond_channels: int = 64

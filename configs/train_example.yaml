@@ -17,6 +17,7 @@ data:
   pin_memory: true
 
 model:
+  model_name: "unet" # or basic
   nb_channels: 64
   num_blocks: 4
   cond_channels: 64
