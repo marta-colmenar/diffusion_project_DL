@@ -110,12 +110,12 @@ def save_fid_real_stats(valid_loader, dataset_name: str, n: int = 1_000, device=
     assert fid.test_stats_exists(dname, mode="clean"), "Failed to save FID real stats."
 
 
-def compute_fid(gen_path, dataset_name, device):
+def compute_fid(gen_path, dataset_name, device, num_workers=4):
     return fid.compute_fid(
         gen_path,
         dataset_name=dataset_name.lower(),
         device=device,
         mode="clean",
         dataset_split="custom",
-        num_workers=4,
+        num_workers=num_workers,
     )
