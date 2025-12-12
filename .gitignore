@@ -8,6 +8,9 @@ venv/
 *.egg-info/
 
 # Data, checkpoints, outputs
+/checkpoints/
+/notebooks/fid_samples/
+/notebooks/data/
 /logs/
 /data/
 /data/*
@@ -15,6 +18,7 @@ venv/
 /samples/
 /*.sqlite
 *.db
+*.pdf
 
 /configs/*
 !configs/*_example.yaml
