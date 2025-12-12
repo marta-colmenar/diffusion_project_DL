@@ -12,16 +12,29 @@ def c_funcs(sigma: torch.Tensor, sigma_data: float):
     return c_in, c_out, c_skip, c_noise
 
 
-def euler_sample(model, sigmas, n, channels, H, sigma_data, device, class_label=None):
+def euler_sample(
+    model,
+    sigmas,
+    n,
+    channels,
+    H,
+    sigma_data,
+    device,
+    class_label=None,
+    guidance_scale=3.0,
+):
     assert not model.training
 
     # sigmas: 1D tensor [sigma_0, sigma_1, ..., sigma_T] (assumed decreasing)
     x = torch.randn(n, channels, H, H, device=device) * sigmas[0].to(device)
 
     if class_label is not None:
-        labels = torch.full((n,), class_label, dtype=torch.long, device=device)
+        labels_cond = torch.full((n,), class_label, dtype=torch.long, device=device)
     else:
-        labels = None
+        labels_cond = torch.full((n,), -1, dtype=torch.long, device=device)
+
+    # Labels for unconditional path
+    labels_uncond = torch.full((n,), -1, dtype=torch.long, device=device)
 
     for i, sigma in enumerate(sigmas):
         sigma = sigma.to(device)
@@ -30,14 +43,21 @@ def euler_sample(model, sigmas, n, channels, H, sigma_data, device, class_label=
             if i + 1 < len(sigmas)
             else torch.tensor(0.0, device=device)
         )
-        # use same sigma for all samples in the batch
+
         sigma_b = sigma.repeat(n)
         c_in, c_out, c_skip, c_noise = c_funcs(sigma_b, sigma_data)
         cin_x = c_in.view(-1, 1, 1, 1) * x
+
         with torch.no_grad():
-            # model expected signature: model(cin_x, c_noise) -> prediction
-            pred = model(cin_x, c_noise.to(device), labels=labels)
+            # TODO: here we run the model twice not to complicate the model code with CFG logic. We might want to optimize this later.
+            pred_uncond = model(cin_x, c_noise.to(device), labels_uncond)
+            pred_cond = model(cin_x, c_noise.to(device), labels_cond)
+
+            # if labels_uncond == labels_cond we practically have unconditioned predictions -> OKAY
+            pred = pred_uncond + guidance_scale * (pred_cond - pred_uncond)
+
         x_denoised = c_skip.view(-1, 1, 1, 1) * x + c_out.view(-1, 1, 1, 1) * pred
         d = (x - x_denoised) / sigma.view(1, 1, 1, 1)
         x = x + d * (sigma_next - sigma).view(1, 1, 1, 1)
+
     return x
