@@ -5,7 +5,7 @@ import pathlib
 import tempfile
 from itertools import islice
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Union
 
 import torch
 from cleanfid import fid
@@ -13,7 +13,7 @@ from torchvision.utils import save_image
 
 from src.config import Config
 from src.data import DataInfo
-from src.model import Model
+from src.model import Model, UNetModel, get_model
 
 logger = logging.getLogger(__name__)
 
@@ -24,23 +24,19 @@ def to_unit_range(x: torch.Tensor) -> torch.Tensor:
 
 def build_model_for_sampling(
     cfg_path: str, device: torch.device, ds_info: DataInfo
-) -> Model:
+) -> Union[Model, UNetModel]:
 
     cfg = Config.load_from_yaml(Path(cfg_path))
 
-    nb_channels = cfg.model.nb_channels
-    num_blocks = cfg.model.num_blocks
-    cond_channels = cfg.model.cond_channels
-    image_channels = ds_info.image_channels
-    conditioned = cfg.model.conditioned
     label_conditioned = cfg.model.cf_guidance
 
-    m = Model(
-        image_channels=image_channels,
-        nb_channels=nb_channels,
-        num_blocks=num_blocks,
-        cond_channels=cond_channels,
-        conditioned=conditioned,
+    m = get_model(
+        model_name=cfg.model.model_name,
+        image_channels=ds_info.image_channels,
+        nb_channels=cfg.model.nb_channels,
+        num_blocks=cfg.model.num_blocks,
+        cond_channels=cfg.model.cond_channels,
+        conditioned=cfg.model.conditioned,
         num_classes=ds_info.num_classes if label_conditioned else 0,
     )
 

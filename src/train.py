@@ -14,7 +14,7 @@ from torchvision.utils import save_image
 from src.common import c_funcs, euler_sample
 from src.config import Config
 from src.data import load_dataset_and_make_dataloaders
-from src.model import Model
+from src.model import get_model
 from src.sigma import build_sigma_schedule, sample_sigma
 from src.utils import compute_fid, save_fid_real_stats, to_unit_range
 
@@ -33,7 +33,7 @@ def add_noise(y: torch.Tensor, sigma: torch.Tensor) -> torch.Tensor:
     return y + sigma.view(-1, 1, 1, 1) * eps
 
 
-def train_model(config_path: str = "configs/train.yaml") -> Model:
+def train_model(config_path: str = "configs/train.yaml"):
 
     cfg = Config.load_from_yaml(Path(config_path))
 
@@ -73,7 +73,8 @@ def train_model(config_path: str = "configs/train.yaml") -> Model:
         )
 
     num_classes = info.num_classes if cfg.model.cf_guidance else 0
-    model = Model(
+    model = get_model(
+        model_name=cfg.model.model_name,
         image_channels=getattr(info, "image_channels", 1),
         nb_channels=cfg.model.nb_channels,
         num_blocks=cfg.model.num_blocks,
@@ -203,8 +204,6 @@ def train_model(config_path: str = "configs/train.yaml") -> Model:
         with open(run_dir / "fids.txt", "w") as f:
             for epoch, fid in epoch_fids:
                 f.write(f"{epoch:04d}, {fid:.6f}\n")
-
-    return model
 
 
 if __name__ == "__main__":
