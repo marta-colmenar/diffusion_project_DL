@@ -1,3 +1,4 @@
+import logging
 from enum import Enum
 from typing import List, Optional, Union
 
@@ -5,9 +6,12 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+logger = logging.getLogger(__name__)
+
 
 class ModelNameEnum(Enum):
     UNET = "unet"
+    UNET_ATTENTION = "unet_attention"
     BASIC = "basic"
 
 
@@ -29,6 +33,17 @@ def get_model(
             cond_channels=cond_channels,
             conditioned=conditioned,
             num_classes=num_classes,
+        )
+    elif model_name == ModelNameEnum.UNET_ATTENTION:
+        return UNetModel(
+            image_channels=image_channels,
+            base_channels=nb_channels,
+            channel_mults=[1, 2, 2, 4],
+            num_blocks_per_level=num_blocks,
+            cond_channels=cond_channels,
+            conditioned=conditioned,
+            num_classes=num_classes,
+            attention_at_blocks=[2],
         )
     elif model_name == ModelNameEnum.BASIC:
         return Model(
@@ -202,6 +217,29 @@ class ClassEmbedding(nn.Module):
         return self.embedding(input)
 
 
+class SelfAttentionBlock(nn.Module):
+    def __init__(self, channels):
+        super().__init__()
+        self.norm = nn.GroupNorm(8, channels)
+        self.qkv = nn.Conv2d(channels, channels * 3, 1)
+        self.proj = nn.Conv2d(channels, channels, 1)
+
+    def forward(self, x):
+        b, c, h, w = x.shape
+        h_norm = self.norm(x)
+        q, k, v = self.qkv(h_norm).chunk(3, dim=1)
+
+        q = q.reshape(b, c, h * w).transpose(1, 2)  # (b, hw, c)
+        k = k.reshape(b, c, h * w)  # (b, c, hw)
+        attn = torch.softmax(q @ k / (c**0.5), dim=-1)
+
+        v = v.reshape(b, c, h * w).transpose(1, 2)
+        out = attn @ v
+        out = out.transpose(1, 2).reshape(b, c, h, w)
+
+        return x + self.proj(out)
+
+
 class UNetModel(nn.Module):
     """
     A compact UNet-like model that uses your Residual / CondResidual blocks.
@@ -223,6 +261,7 @@ class UNetModel(nn.Module):
         cond_channels: int = 128,
         conditioned: bool = True,
         num_classes: int = 0,
+        attention_at_blocks: List[int] = [],
     ) -> None:
         super().__init__()
         if channel_mults is None:
@@ -231,6 +270,7 @@ class UNetModel(nn.Module):
         self.conditioned = conditioned
         self.num_classes = num_classes
         self.noise_emb = NoiseEmbedding(cond_channels)
+        self.attention_at_blocks = set(attention_at_blocks)
 
         if self.conditioned and self.num_classes > 0:
             self.class_emb = ClassEmbedding(num_classes, cond_channels)
@@ -241,10 +281,11 @@ class UNetModel(nn.Module):
             image_channels, base_channels, kernel_size=3, padding=1
         )
 
+        self.skip_channels = []
         # encoder / down path
         self.downs = nn.ModuleList()
         in_ch = base_channels
-        for mult in channel_mults:
+        for ii, mult in enumerate(channel_mults):
             out_ch = base_channels * mult
             blocks = nn.ModuleList()
             for _ in range(num_blocks_per_level):
@@ -253,8 +294,22 @@ class UNetModel(nn.Module):
                     if conditioned
                     else ResidualBlock(in_ch)
                 )
+            attn = (
+                SelfAttentionBlock(in_ch)
+                if ii in self.attention_at_blocks
+                else nn.Identity()
+            )
             downsample = nn.Conv2d(in_ch, out_ch, kernel_size=3, stride=2, padding=1)
-            self.downs.append(nn.ModuleDict({"blocks": blocks, "down": downsample}))
+            self.downs.append(
+                nn.ModuleDict(
+                    {
+                        "blocks": blocks,
+                        "attn": attn,
+                        "down": downsample,
+                    }
+                )
+            )
+            self.skip_channels.append(in_ch)
             in_ch = out_ch
 
         # bottleneck
@@ -266,33 +321,44 @@ class UNetModel(nn.Module):
                 for _ in range(max(1, num_blocks_per_level))
             ]
         )
+        self.bottleneck_attn = (
+            SelfAttentionBlock(in_ch)
+            if len(channel_mults) in self.attention_at_blocks
+            else nn.Identity()
+        )
 
         # decoder / up path
         self.ups = nn.ModuleList()
         rev_mults = list(reversed(channel_mults))
-        for mult in rev_mults:
+        rev_skips = list(reversed(self.skip_channels))
+        for up_index, (mult, skip_ch) in enumerate(zip(rev_mults, rev_skips)):
+            down_index = len(channel_mults) - 1 - up_index
             out_ch = base_channels * mult
-            # after concatenation with skip, channels = in_ch + skip_ch
-            blocks = nn.ModuleList()
-            # two residual blocks after concatenation
-            for _ in range(num_blocks_per_level):
-                blocks.append(
-                    CondResidualBlock(in_ch + out_ch, cond_channels)
-                    if conditioned
-                    else ResidualBlock(in_ch + out_ch)
-                )
-            # after first block, channel count is (in_ch + out_ch) -> keep it stable
             upsample = nn.Sequential(
                 nn.Upsample(scale_factor=2, mode="nearest"),
-                nn.Conv2d(in_ch + out_ch, out_ch, kernel_size=3, padding=1),
+                nn.Conv2d(in_ch, out_ch, kernel_size=3, padding=1),
             )
-            self.ups.append(nn.ModuleDict({"blocks": blocks, "up": upsample}))
-            in_ch = out_ch
+            block_in_ch = skip_ch + out_ch
+            # after concatenation with skip, channels = in_ch + skip_ch
+            blocks = nn.ModuleList(
+                [
+                    CondResidualBlock(block_in_ch, cond_channels)
+                    if conditioned
+                    else ResidualBlock(block_in_ch)
+                    for _ in range(num_blocks_per_level)
+                ]
+            )
+            attn = (
+                SelfAttentionBlock(block_in_ch)
+                if down_index in self.attention_at_blocks
+                else nn.Identity()
+            )
+            self.ups.append(
+                nn.ModuleDict({"blocks": blocks, "attn": attn, "up": upsample})
+            )
+            in_ch = block_in_ch
 
-        # final conv to map back to image channels
-        self.conv_out = nn.Conv2d(
-            base_channels, image_channels, kernel_size=3, padding=1
-        )
+        self.conv_out = nn.Conv2d(in_ch, image_channels, kernel_size=3, padding=1)
         if self.conditioned:
             nn.init.zeros_(self.conv_out.weight)
 
@@ -329,25 +395,25 @@ class UNetModel(nn.Module):
                     x = block(x, cond)
                 else:
                     x = block(x)
-            x = stage["down"](x)  # type: ignore
+            x = stage["attn"](x)  # type: ignore
             skips.append(x)
+            x = stage["down"](x)  # type: ignore
 
         for block in self.bottleneck:
-            if isinstance(block, CondResidualBlock):
-                x = block(x, cond)
-            else:
-                x = block(x)
+            x = block(x, cond) if self.conditioned else block(x)
+        x = self.bottleneck_attn(x)
 
         for stage in self.ups:
+            x = stage["up"](x)  # type: ignore
             skip = skips.pop()
-            # concatenate along channel dimension
+
             x = torch.cat([x, skip], dim=1)
             for block in stage["blocks"]:  # type: ignore
                 if isinstance(block, CondResidualBlock):
                     x = block(x, cond)
                 else:
                     x = block(x)
-            x = stage["up"](x)  # type: ignore
+            x = stage["attn"](x)  # type: ignore
 
         out = self.conv_out(x)
         return out

@@ -124,6 +124,9 @@ def train_model(config_path: str = "configs/train.yaml"):
             loss = F.mse_loss(pred, target)
             optimizer.zero_grad()
             loss.backward()
+            torch.nn.utils.clip_grad_norm_(
+                model.parameters(), max_norm=1.0
+            )  # Gradient clipping
             optimizer.step()
 
             step_loss = loss.item()

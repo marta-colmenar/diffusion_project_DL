@@ -48,6 +48,7 @@ def build_model_for_sampling(
 def load_ckpt_into_model(model, ckpt_path, device):
     ck = torch.load(ckpt_path, map_location=device)
     state = ck.get("model_state", ck)
+    # state = {k.replace("_orig_mod.", ""): v for k, v in state.items()}
     try:
         model.load_state_dict(state)
     except Exception:
