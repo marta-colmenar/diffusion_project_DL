@@ -38,11 +38,11 @@ python -m src.sample --ckpt checkpoints/model_epoch_1.pth --n 8
 
 ### FashionMNIST
 
-- Provided model, without noise conditioning: `python -m src.train PUT_PATH`
-- Provided model, with noise conditioning: `python -m src.train PUT_PATH`
-- Upgraded model, with noise conditioning: `python -m src.train PUT_PATH`
-- Provided model, with noise+class conditioning for Classifier-Free Guidance: `python -m src.train PUT_PATH`
+- Provided model, without noise conditioning: `python -m src.train configs/config_fashionmnist_uncond.yaml`
+- Provided model, with noise conditioning: `python -m src.train configs/config_fashionmnist_cond.yaml`
+- Upgraded model, with noise conditioning: `python -m src.train configs/config_fashionmnist_improved_cond.yaml`
+- Provided model, with noise+class conditioning for Classifier-Free Guidance: `python -m src.train configs/config_fashionmnist_cfg.yaml`
 
 ### CelebA
 
-- Upgraded model, with noise conditioning: `python -m src.train PUT_PATH`
+- Upgraded model, with noise conditioning and attention layers: `python -m src.train configs/config_celeba_improved_cfg.yaml`

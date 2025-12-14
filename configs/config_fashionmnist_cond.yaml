@@ -1,0 +1,29 @@
+training:
+  run_name: "fashionmnist"
+  evaluation_metric: "FID"
+  fid_eval_freq: 10
+  fid_steps: 100
+  fid_num_samples: 1000
+  checkpoint_freq: 10
+  learning_rate: 0.0001
+  num_epochs: 500
+  cfg_drop_prob: 0.1
+  
+data:
+  dataset_name: "FashionMNIST"
+  data_root: "data"
+  batch_size: 64
+  num_workers: 4
+  pin_memory: true
+
+model:
+  model_name: "basic"
+  nb_channels: 128
+  num_blocks: 10
+  cond_channels: 8
+  conditioned: True # Refers to noise (sigma) conditioning
+  cf_guidance: False # Refers to classifier-free guidance
+
+diffusion:
+  sigma_min: 0.002
+  sigma_max: 80.0

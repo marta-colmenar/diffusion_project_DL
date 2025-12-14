@@ -20,9 +20,6 @@ venv/
 *.db
 *.pdf
 
-/configs/*
-!configs/*_example.yaml
-
 # macOS
 .DS_Store
 
