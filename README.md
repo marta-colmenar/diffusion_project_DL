@@ -27,11 +27,9 @@ From project root:
 python -m src.train
 ```
 
-2. Sample (uses latest checkpoint if --ckpt missing):
+2. Sample (uses latest checkpoint):
 ```bash
-python -m src.sample --n 8 --steps 50 --outdir samples
-# or specify a checkpoint
-python -m src.sample --ckpt checkpoints/model_epoch_1.pth --n 8
+python -m src.sample --n 8 --steps 50 --outdir samples model_dir
 ```
 
 ## Best results achieved

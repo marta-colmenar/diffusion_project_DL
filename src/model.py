@@ -38,12 +38,12 @@ def get_model(
         return UNetModel(
             image_channels=image_channels,
             base_channels=nb_channels,
-            channel_mults=[1, 2, 2, 4],
+            channel_mults=[1, 2, 4, 8],
             num_blocks_per_level=num_blocks,
             cond_channels=cond_channels,
             conditioned=conditioned,
             num_classes=num_classes,
-            attention_at_blocks=[2],
+            attention_at_blocks=[2, 3],
         )
     elif model_name == ModelNameEnum.BASIC:
         return Model(

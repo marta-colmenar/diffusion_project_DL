@@ -12,6 +12,4 @@
 #SBATCH --mem-per-cpu=8G
 
 source venv/bin/activate
-python -m src.train --config configs/train_unconditioned.yaml
-python -m src.train --config configs/train_conditioned.yaml
-python -m src.train --config configs/train_conditioned_class.yaml
+python -m src.train --config configs/train_example.yaml
